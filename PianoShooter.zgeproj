@@ -11,8 +11,7 @@ void ParamsChangeName(xptr Handle,int Layer, int Param, string NewName) {}]]>
     </ZExternalLibrary>
     <ZLibrary Name="PianoLib" Comment="Piano related functions">
       <Source>
-<![CDATA[
-// Long term, this should become a real float printer?
+<![CDATA[// Long term, this should become a real float printer?
 // Ryu's method is a lot of code though.
 string impFloatToStr(float fval)
 {
@@ -335,9 +334,14 @@ int isNoteBlack(int theNote)
 }]]>
       </Source>
     </ZLibrary>
-    <ZLibrary Name="PianoLinkLib">
+    <ZLibrary Name="PianoLinkLib" HasInitializer="1">
       <Source>
-<![CDATA[// Plugin and layer for linking to other visualizer layers.
+<![CDATA[// If we just blindly write every cycle, it can cause a crash at the end
+// of rendering the real video.  So we have to buffer parameters
+// and only write them when they are individually changed.
+float[P_NUM_PARAMS] ParamBuffer;
+int ParamsInitialized = 0;
+// Plugin and layer for linking to other visualizer layers.
 xptr FLPluginHandle;
 int LayerNr;]]>
       </Source>
@@ -381,47 +385,53 @@ if (link > 0)
   int target = link - 1;
   for (int i = 0; i < Parameters.SizeDim1; i++)
   {
-    switch (i)
+    if ((ParamsInitialized == 0) || (Parameters[i] != ParamBuffer[i]))
     {
-      // These should probably be inverted, but maybe ignored.
-      case P_SHOW_PIANO:
-      case P_SHOW_NOTES:
-      case P_SHOW_PARTICLES:
-      case P_LIGHT_KEYS:
-        //ParamsWriteValueForLayer(FLPluginHandle,target,i, 1.0 - Parameters[i]);
-        break;
+      switch (i)
+      {
+        // These should probably be inverted, but maybe ignored.
+        case P_SHOW_PIANO:
+        case P_SHOW_NOTES:
+        case P_SHOW_PARTICLES:
+        case P_LIGHT_KEYS:
+          //ParamsWriteValueForLayer(FLPluginHandle,target,i, 1.0 - Parameters[i]);
+          break;
 
-      // These should be linked
-      case P_PIANO_MODE:
-      case P_NOTE_DIR:
-      case P_TRANSPOSE:
-      case P_PREROLL:
-      case P_COLOR_PALETTE:
-      case P_NOTE_SPEED:
-      case P_KEYBOARD_ANGLE:
-      case P_CAMERA_X:
-      case P_CAMERA_Y:
-      case P_CAMERA_Z:
-      case P_CAMERA_ANGLE:
-      case P_NUM_KEYS:
-      case P_FIRST_KEY:
-      case P_TEMPO:
-        ParamsWriteValueForLayer(FLPluginHandle,target,i, Parameters[i]);
-        break;
+        // These should be linked
+        case P_PIANO_MODE:
+        case P_NOTE_DIR:
+        case P_TRANSPOSE:
+        case P_PREROLL:
+        case P_COLOR_PALETTE:
+        case P_NOTE_SPEED:
+        case P_KEYBOARD_ANGLE:
+        case P_CAMERA_X:
+        case P_CAMERA_Y:
+        case P_CAMERA_Z:
+        case P_CAMERA_ANGLE:
+        case P_NUM_KEYS:
+        case P_FIRST_KEY:
+        case P_TEMPO:
+          ParamsWriteValueForLayer(FLPluginHandle,target,i, Parameters[i]);
+          break;
 
-      // This one.... maybe just make sure only one is set?
-      case P_PIANOLINK:
-        ParamsWriteValueForLayer(FLPluginHandle,target,i, 1.0 - Parameters[i]);
-        break;
+        // This one.... maybe just make sure only one is set?
+        case P_PIANOLINK:
+          ParamsWriteValueForLayer(FLPluginHandle,target,i, 1.0 - Parameters[i]);
+          break;
+      }
+
+      ParamBuffer[i] = Parameters[i];
     }
   }
+
+  ParamsInitialized = 1;
 }]]>
       </Expression>
     </ZExpression>
     <ZExpression Name="PianoShooterLogic">
       <Expression>
-<![CDATA[
-// Update cameras from sliders
+<![CDATA[// Update cameras from sliders
 App.CameraPosition.X = (Parameters[P_CAMERA_X]* 200) - 100;
 App.CameraPosition.Y = (Parameters[P_CAMERA_Y]* 200) - 100;
 App.CameraPosition.Z = 5 + (Parameters[P_CAMERA_Z]) * 200;
@@ -585,6 +595,7 @@ PianoLink @list1000: None,A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S,T,U,V,W,X,Y,Z
             <Constant Name="P_FIRST_KEY" Type="1" Value="16" IntValue="16"/>
             <Constant Name="P_TEMPO" Type="1" Value="17" IntValue="17"/>
             <Constant Name="P_PIANOLINK" Type="1" Value="18" IntValue="18"/>
+            <Constant Name="P_NUM_PARAMS" Type="1" Value="19" IntValue="19"/>
           </Children>
         </Group> <!-- ParameterIndicies -->
 
