@@ -6,41 +6,7 @@
 <![CDATA[// ZGameEditor Visualizer built-in functions
 void ParamsReadValueForLayer(xptr Handle, int Layer, int Param, ref float Value) {}
 void ParamsWriteValueForLayer(xptr Handle, int Layer, int Param, float NewValue) {}
-void ParamsChangeName(xptr Handle,int Layer, int Param, string NewName) {}
-// This appears to work, in that it gets a string, but
-// it's the string of THIS plugin regardless of layer?
-// Maybe I have the parameters wrong.
-//
-// string ZgeVizGetEffectName(xptr Handle, int Layer) {}
-/*
-         25    0 003D71FC ClipboardGetBitmapHeight
-         24    1 003D7274 ClipboardGetBitmapPixel
-         26    2 003D7184 ClipboardGetBitmapWidth
-         27    3 003D72FC CreatePlugInstance
-         23    4 0035DFF8 DmxWriteFloat
-         22    5 0035E030 DmxWriteFloats
-         15    6 003AC88C MidiWrite
-         20    7 003AA4DC ParamsChangeName
-         21    8 003AA460 ParamsNotifyChanged
-         18    9 003AA570 ParamsReadValueForLayer
-         17    A 003AA6B0 ParamsUpdateComboItems
-         19    B 003AA5D4 ParamsWriteValueForLayer
-         13    C 003AC8E0 ReadPrivateData
-          3    D 0005CB54 TMethodImplementationIntercept
-         12    E 003AC900 WriteOutParam
-         14    F 003AC8C0 WritePrivateData
-         10   10 003AA864 ZgeVizBitmapsInUseChanged
-          6   11 003AE760 ZgeVizFontGetContent
-          5   12 003AA7C0 ZgeVizGetEffectName
-         16   13 003AC5F8 ZgeVizGetFileNames
-          4   14 003AE858 ZgeVizOscSendFloat
-         11   15 003AA790 ZgeVizSetEnablePostProcess
-          7   16 003AC988 ZgeVizSvgClose
-          8   17 003AC97C ZgeVizSvgGetContent
-          9   18 003AC928 ZgeVizSvgOpen
-          2   19 00010B40 __dbk_fcall_wrapper
-          1   1A 004085AC dbkFCallWrapperAddr
-*/]]>
+void ParamsChangeName(xptr Handle,int Layer, int Param, string NewName) {}]]>
       </Source>
     </ZExternalLibrary>
     <ZLibrary Name="PianoLib" Comment="Piano related functions">
@@ -371,14 +337,9 @@ int isNoteBlack(int theNote)
     </ZLibrary>
     <ZLibrary Name="PianoLinkLib">
       <Source>
-<![CDATA[             // For Autolink... looking closely at ParamLink plugin for clues :)
+<![CDATA[// Plugin and layer for linking to other visualizer layers.
 xptr FLPluginHandle;
-int LayerNr;
-
-// Control another PianoShooter.
-void DoAutolink()
-{
-}]]>
+int LayerNr;]]>
       </Source>
     </ZLibrary>
     <ZExpression Name="InitializeKeys">
