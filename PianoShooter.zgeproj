@@ -1,0 +1,1150 @@
+<?xml version="1.0" encoding="iso-8859-1" ?>
+<ZApplication Name="App" Caption="ZGameEditor application" AmbientLightColor="0.502 0.502 0.502 1" CustomScreenWidth="1" CameraPosition="-3.2 16.8 161.8" ClipNear="0.01" ClipFar="1000" FileVersion="2">
+  <OnLoaded>
+    <ZExternalLibrary ModuleName="ZGameEditor Visualizer">
+      <Source>
+<![CDATA[// ZGameEditor Visualizer built-in functions
+void ParamsReadValueForLayer(xptr Handle, int Layer, int Param, ref float Value) {}
+void ParamsWriteValueForLayer(xptr Handle, int Layer, int Param, float NewValue) {}
+void ParamsChangeName(xptr Handle,int Layer, int Param, string NewName) {}
+// This appears to work, in that it gets a string, but
+// it's the string of THIS plugin regardless of layer?
+// Maybe I have the parameters wrong.
+//
+// string ZgeVizGetEffectName(xptr Handle, int Layer) {}
+/*
+         25    0 003D71FC ClipboardGetBitmapHeight
+         24    1 003D7274 ClipboardGetBitmapPixel
+         26    2 003D7184 ClipboardGetBitmapWidth
+         27    3 003D72FC CreatePlugInstance
+         23    4 0035DFF8 DmxWriteFloat
+         22    5 0035E030 DmxWriteFloats
+         15    6 003AC88C MidiWrite
+         20    7 003AA4DC ParamsChangeName
+         21    8 003AA460 ParamsNotifyChanged
+         18    9 003AA570 ParamsReadValueForLayer
+         17    A 003AA6B0 ParamsUpdateComboItems
+         19    B 003AA5D4 ParamsWriteValueForLayer
+         13    C 003AC8E0 ReadPrivateData
+          3    D 0005CB54 TMethodImplementationIntercept
+         12    E 003AC900 WriteOutParam
+         14    F 003AC8C0 WritePrivateData
+         10   10 003AA864 ZgeVizBitmapsInUseChanged
+          6   11 003AE760 ZgeVizFontGetContent
+          5   12 003AA7C0 ZgeVizGetEffectName
+         16   13 003AC5F8 ZgeVizGetFileNames
+          4   14 003AE858 ZgeVizOscSendFloat
+         11   15 003AA790 ZgeVizSetEnablePostProcess
+          7   16 003AC988 ZgeVizSvgClose
+          8   17 003AC97C ZgeVizSvgGetContent
+          9   18 003AC928 ZgeVizSvgOpen
+          2   19 00010B40 __dbk_fcall_wrapper
+          1   1A 004085AC dbkFCallWrapperAddr
+*/]]>
+      </Source>
+    </ZExternalLibrary>
+    <ZLibrary Name="PianoLib" Comment="Piano related functions">
+      <Source>
+<![CDATA[
+// Long term, this should become a real float printer?
+// Ryu's method is a lot of code though.
+string impFloatToStr(float fval)
+{
+   string theString;
+   // yeah, fix this.
+   theString = "(" + intToStr(fVal*1000) + "/1000)";
+   return theString;
+}
+
+// Dump all parameters to trace.
+void DumpParameters()
+{
+   for (int i = 0; i < Parameters.SizeDim1; i++)
+   {
+     float pval = Parameters[i];
+     trace("Parameter " + intToStr(i) + " = " + impFloatToStr(pval));
+   }
+}
+
+// TODO - fix this.
+// Really awful tap tempo - can we just query it?
+// Ok - now we take a combo box so you can at least
+// make it solid on tempos that match multiples of 10....
+void FindTempo()
+{
+  int tempoType = floor(PARAMETERS[P_TEMPO]*1000);
+
+  // Auto tempo.....
+  if (tempoType == 0)
+  {
+    // The higher, the more accurate, but the longer it takes
+    // for it to get or adjust a tempo.
+    int numBeatsToAvg = 60;
+
+    if (LastBeat > SongPositionInBeats)
+    {
+      LastBeatTime = App.Time;
+      LastBeat = SongPositionInBeats;
+      BeatCounter = 1;
+    }
+    else
+    {
+      BeatCounter = (BeatCounter +1 )% numBeatsToAvg;
+      if (BeatCounter == 0)
+      {
+        if (LastBeatTime != 0)
+        {
+          float diff = (SongPositionInBeats - LastBeat)/(App.Time - LastBeatTime);
+          float newTempo = diff * 60;
+          if (Tempo == 0)
+          {
+            trace("Got initial tempo! It's " + IntToStr(newTempo));
+          }
+          Tempo = newTempo;
+        }
+        LastBeatTime = App.Time;
+        LastBeat = SongPositionInBeats;
+      }
+    }
+  }
+  else
+  {
+    // List starts at 60 right now after auto, and goes up by 10 each time.
+    Tempo = (tempoType - 1)* 10 + 60;
+  }
+}
+
+// Called when playing has started in FL Studio
+void onPlayingStart()
+{
+  isPlaying = 1;
+}
+
+// Called when playing ends
+void onPlayingEnd()
+{
+  isPlaying = 0;
+  //DumpParameters();
+}
+
+// Kills all note models on their next update.
+void clearNotes()
+{
+  for (int c = 0; c < 16; c++)
+  {
+     for (int n = 0; n < 128; n++)
+     {
+       if (ActiveNotes[n,c] != null)
+       {
+        ActiveNotes[n,c].noteIsActive = 0;
+        ActiveNotes[n,c] = null;
+       }
+     }
+  }
+  ClearAllNotes = 1;
+}
+
+// Deactive note model when MIDI Note ends
+void endNote(int c, int n, int key)
+{
+  if (ActiveNotes[n,c] != null)
+  {
+    ActiveNotes[n,c].noteIsActive = 0;
+    ActiveNotes[n,c].totalDelta += app.DeltaTime;
+  }
+  ActiveNotes[n,c] = null;
+}
+
+// Create node model on MIDI start note
+void createNote(int c, int n,float v, int key)
+{
+  if (ActiveNotes[n,c] != null)
+  {
+    endNote(c,n,key);
+  }
+
+  ActiveNotes[n,c] = createModel(NoteModel);
+
+  ActiveNotes[n,c].startTime = app.DeltaTime;
+  ActiveNotes[n,c].noteIndex = n;
+  ActiveNotes[n,c].noteIsActive = 1;
+  ActiveNotes[n,c].noteChannel = c;
+  ActiveNotes[n,c].Position.Z = 0;
+  ActiveNotes[n,c].Position.Y = NoteStart;
+  ActiveNotes[n,c].Position.X = KeyStart + key*KeySpacing + Alignment;
+}
+
+// Pick the piano key for a note, or -1 if out of range.
+int keyFromNote(int note)
+{
+  int key = (note - FirstPianoKey);
+  if (key < 0)
+  {
+     key = -1;
+  }
+  if (key >= NumPianoKeys)
+  {
+    key = -1;
+  }
+
+  // If the key is out of range, we can either ignore it
+  // or transpose to fit our keyboard....
+  if (key < 0)
+  {
+    // *which* key to use on transpose is a question
+    // that needs more thought.
+    if (Parameters[P_TRANSPOSE] > 0.5)
+    {
+      int noteLetter = note % 12;
+      int start = FirstPianoKey % 12;
+      int end = (FirstPianoKey + NumPianoKeys) % 12;
+
+      key = (noteLetter + 12 - start) % 12;
+      // Still can't do it?
+      if (key >= NumPianoKeys)
+      {
+         key = -1;
+      }
+    }
+  }
+
+  return key;
+}
+
+// Called when a MIDI note starts
+void onNoteOn(int channel, int note, int velocity)
+{
+//  trace("Note on " +intToStr(channel) + ":" + intToStr(note) + " @ " + intToStr(velocity));
+  NoteState[note,channel] = velocity;
+
+  int key = keyFromNote(note);
+  if (key >= 0)
+  {
+    if (PianoMode == 0)
+    {
+      KeyArray[key].isDown = 1;
+      KeyArray[key].lastChannel = channel;
+      KeyArray[key].Position.Y = -1;
+      KeyArray[key].Position.Z = -1;
+    }
+    createNote(channel,note,velocity, key);
+  }
+}
+
+// Called when a MIDI note stops
+void onNoteOff(int channel, int note, int velocity)
+{
+//  trace("Note off " + intToStr(channel) + ":" + intToStr(note));
+  NoteState[note,channel] = 0;
+  int key = keyFromNote(note);
+  if (key >= 0)
+  {
+    if (PianoMode == 0)
+    {
+      KeyArray[key].isDown = 0;
+    }
+    endNote(channel,note, key);
+  }
+}
+
+// Set up the keyboard for number of keys and first key.
+void GenKeyboard(int firstKey, int numKeys)
+{
+  NumPianoKeys = numKeys;
+  FirstPianoKey = firstKey;
+
+  // Reset all keys
+  for (int i = 0; i < 128; i++)
+  {
+    KeyArray[i].isDown = 0;
+    KeyArray[i].visible = 0;
+    KeyArray[i].Position.Y = 0;
+    KeyArray[i].Position.Z = 0;
+  }
+
+  // Calc start of keyboard on X
+  KeyStart = -(KeySpacing*NumPianoKeys*.5);
+  float curKeyX = KeyStart;
+
+  // Generate the piano keyboard
+  for (int i = 0; i < NumPianoKeys; i++)
+  {
+    KeyArray[i].visible = 1;
+    KeyArray[i].Position.X = curKeyX;
+    curKeyX += KeySpacing;
+    KeyArray[i].NoteValue = i + FirstPianoKey;
+  }
+}
+
+
+
+//---------------------------------------------------------------------------
+//
+// FL Studio message entry points.
+//
+//---------------------------------------------------------------------------
+void OnHostMessage(int id, int index, int value)
+{
+  switch (id)
+  {
+  case 12:
+    if (value > 0)
+      onPlayingStart();
+    else
+      onPlayingEnd();
+    break;
+  default:
+    trace("Host: " + intToStr(id)
+                + ":" + intToStr(index)
+                + ":" + intToStr(value));
+  }
+}
+
+void OnMidiMessage(int status, int data1, int data2)
+{
+  //trace("Got midi " + intToStr(status)
+  //               + ":" + intToStr(data1)
+  //               + ":" + intToStr(data2));
+  int channel = status & 0x0f;
+  int opcode = status & 0xf0;
+
+  switch (opcode)
+  {
+    case 0x80:
+      onNoteOff(channel, data1,data2);
+      break;
+    case 0x90:
+      onNoteOn(channel, data1,data2);
+      break;
+    case 0xa0: // polyphonic aftertouch
+      trace("PAT ch " + intToStr(channel));
+      break;
+    case 0xb0: // control change
+      trace("CC ch " + intToStr(channel));
+      break;
+    case 0xc0: // program change
+      trace("PC ch " + intToStr(channel));
+      break;
+    case 0xd0: // aftertouch
+      trace("AT ch " + intToStr(channel));
+      break;
+    case 0xe0: // Pitch wheel
+      trace("PW ch " + intToStr(channel));
+      break;
+    case 0xf0: // system messages
+      trace("SYS");
+      break;
+    default: // ?
+      trace("UNKNOWN MIDI: " + IntToStr(status) + "," + IntToStr(data1) + "," + IntToStr(data2));
+      break;
+  }
+}
+
+// Give a knob an exponential feel.
+// Large powers weight to large values.
+float expKnobFunc(float x, float power)
+{
+  return (1.0 - (1.0 - pow(x,power)));
+}
+
+// Returns 1 if it's a flat/sharp black key,
+//         0 if it's a natural white key.
+int isNoteBlack(int theNote)
+{
+  int isItBlack = 1;
+  switch(theNote % 12)
+  {
+    case 0: //c
+    case 2: //d
+    case 4: //e
+    case 5: //f
+    case 7: //g
+    case 9: //a
+    case 11: //b
+      isItBlack = 0;
+      break;
+  }
+
+  return isItBlack;
+}]]>
+      </Source>
+    </ZLibrary>
+    <ZLibrary Name="PianoLinkLib">
+      <Source>
+<![CDATA[             // For Autolink... looking closely at ParamLink plugin for clues :)
+xptr FLPluginHandle;
+int LayerNr;
+
+// Control another PianoShooter.
+void DoAutolink()
+{
+}]]>
+      </Source>
+    </ZLibrary>
+    <ZExpression Name="InitializeKeys">
+      <Expression>
+<![CDATA[// Save Viewport
+ViewPortSize=vector2(app.ViewportWidth,app.ViewportHeight);
+
+// Fill the note array with null
+for (int i = 0; i < 128; i++)
+{
+  for (int j = 0; j < 16; j++)
+  {
+    ActiveNotes[i,j] = null;
+  }
+  KeyArray[i] = createModel(PianoKeyModel);
+  KeyArray[i].visible = 0;
+
+  KeyArray[i].pressStep[0] = 0.3;
+  KeyArray[i].pressStep[1] = 0.3;
+  KeyArray[i].pressStep[2] = 0.3;
+}
+
+NumPianoKeys  = Parameters[P_NUM_KEYS]*128;
+FirstPianoKey = Parameters[P_FIRST_KEY]*127;
+GenKeyboard(FirstPianoKey,NumPianoKeys);]]>
+      </Expression>
+    </ZExpression>
+  </OnLoaded>
+  <OnUpdate>
+    <ZExpression Name="PianoLink">
+      <Expression>
+<![CDATA[// This allows you to link two PianoShooters such that one controls
+// the critical parameters of the other to keep them in sync.
+
+// Means you only have to automate one of them.
+int link = floor(Parameters[P_PIANOLINK]*1000);
+if (link > 0)
+{
+  int target = link - 1;
+  for (int i = 0; i < Parameters.SizeDim1; i++)
+  {
+    switch (i)
+    {
+      // These should probably be inverted, but maybe ignored.
+      case P_SHOW_PIANO:
+      case P_SHOW_NOTES:
+      case P_SHOW_PARTICLES:
+      case P_LIGHT_KEYS:
+        //ParamsWriteValueForLayer(FLPluginHandle,target,i, 1.0 - Parameters[i]);
+        break;
+
+      // These should be linked
+      case P_PIANO_MODE:
+      case P_NOTE_DIR:
+      case P_TRANSPOSE:
+      case P_PREROLL:
+      case P_COLOR_PALETTE:
+      case P_NOTE_SPEED:
+      case P_KEYBOARD_ANGLE:
+      case P_CAMERA_X:
+      case P_CAMERA_Y:
+      case P_CAMERA_Z:
+      case P_CAMERA_ANGLE:
+      case P_NUM_KEYS:
+      case P_FIRST_KEY:
+      case P_TEMPO:
+        ParamsWriteValueForLayer(FLPluginHandle,target,i, Parameters[i]);
+        break;
+
+      // This one.... maybe just make sure only one is set?
+      case P_PIANOLINK:
+        ParamsWriteValueForLayer(FLPluginHandle,target,i, 1.0 - Parameters[i]);
+        break;
+    }
+  }
+}]]>
+      </Expression>
+    </ZExpression>
+    <ZExpression Name="PianoShooterLogic">
+      <Expression>
+<![CDATA[
+// Update cameras from sliders
+App.CameraPosition.X = (Parameters[P_CAMERA_X]* 200) - 100;
+App.CameraPosition.Y = (Parameters[P_CAMERA_Y]* 200) - 100;
+App.CameraPosition.Z = 5 + (Parameters[P_CAMERA_Z]) * 200;
+
+
+// Rotate per camera angle and point the camera to look at center.
+float camAngle = Parameters[P_CAMERA_ANGLE] * 2 *  PI;
+
+float newX = App.CameraPosition.X * cos(camAngle) -
+             App.CameraPosition.Z * sin(camAngle);
+float newZ = App.CameraPosition.X * sin(camAngle) +
+             App.CameraPosition.Z * cos(camAngle);
+
+App.CameraPosition.X = newX;
+App.CameraPosition.Z = newZ;
+
+// Note: rotation is 0.0 - 1.0, so no PI needed.
+App.CameraRotation.Y = Parameters[P_CAMERA_ANGLE];
+
+if (ClearAllNotes > 0)
+{
+  ClearAllNotes = 0;
+}
+
+// Get preroll
+int preBeats = floor(Parameters[P_PREROLL]*1000);
+switch (preBeats)
+{
+  case 0: PreRoll = 4; break;
+  case 1: PreRoll = 6; break;
+  case 2: PreRoll = 8; break;
+  case 3: PreRoll = 12; break;
+}
+
+// If Piano start/length change, update the key array
+if ((NumPianoKeys  != floor(Parameters[P_NUM_KEYS]*116)+12) ||
+    (FirstPianoKey != floor(Parameters[P_FIRST_KEY]*116)))
+{
+  NumPianoKeys  = Parameters[P_NUM_KEYS]*116 + 12;
+  FirstPianoKey = Parameters[P_FIRST_KEY]*116;
+
+  GenKeyboard(FirstPianoKey,NumPianoKeys);
+  clearNotes();
+}
+
+// Update key angle from sliders
+if (KeyAngle != Parameters[P_KEYBOARD_ANGLE])
+{
+  KeyAngle = Parameters[P_KEYBOARD_ANGLE];
+  for (int i = 0; i < 128; i++)
+  {
+    KeyArray[i].Rotation.X = -KeyAngle/5.0;
+  }
+}
+
+
+int curDir = Parameters[P_NOTE_DIR];
+
+// Update current direction - if we change it, nuke existing notes.
+if (curDir != NoteDirection)
+{
+  NoteDirection = curDir;
+  clearNotes();
+}
+
+if (PianoMode != floor(Parameters[P_PIANO_MODE]*1000))
+{
+  PianoMode = floor(Parameters[P_PIANO_MODE]*1000) ;
+  // Reset existing notes
+  clearNotes();
+}
+
+FindTempo();
+
+// Update note speed from slider....
+NoteSpeed = (Parameters[P_NOTE_SPEED] - 0.5)*NoteSpeedRange + NoteSpeedBase;
+NoteStep = app.DeltaTime * NoteSpeed;
+
+// For player mode, start the notes 4 beats out
+PlayerY =   PreRoll*NoteSpeed / (Tempo/60.0);
+
+if (PianoMode == 0)
+{
+  NoteStart = 0;
+}
+else if (PianoMode == 1)
+{
+  NoteStart = PlayerY;
+  NoteStep *= -1;
+}
+
+
+if (NoteDirection)
+{
+  NoteStart *= -1;
+  NoteStep  *= -1;
+}]]>
+      </Expression>
+    </ZExpression>
+  </OnUpdate>
+  <Content>
+    <Group Name="FLStudio">
+      <Children>
+        <Constant Name="AuthorInfo" Type="2">
+          <StringValue>
+<![CDATA[Impostorem
+http://www.impostorem.com]]>
+          </StringValue>
+        </Constant>
+        <Constant Name="ParamHelpConst">
+          <StringValue>
+<![CDATA[Show Piano @checkbox
+Show Notes @checkbox
+Show Particles @checkbox
+Light Keys @checkbox
+Note Direction @checkbox
+Transpose @checkbox
+Preroll @list1000: 4,6,8,12
+Palette @list1000: Prime,Sunrise,Dusk, BlueSky, Rainbow,Fire,Grass,Pine,Icy, Bunnies, Bones
+Piano @list1000: Shooter, Player
+Note Speed
+Keyboard Angle
+Camera X
+Camera Y
+Camera Z
+Camera Angle
+Num Keys
+First Key
+Tempo @list1000: Auto,60,70,80,90,100,110,120,130,140,150,160,170,180,190,200,210,220,230,240
+PianoLink @list1000: None,A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S,T,U,V,W,X,Y,Z
+]]>
+          </StringValue>
+        </Constant>
+        <Variable Name="isPlaying" Type="1"/>
+        <Array Name="Parameters" SizeDim1="19" Persistent="255">
+          <Values>
+<![CDATA[789C636068B06780631840E637D8ABB231DA374E75B6BF79EEBB1D5BA3A8BDE5160F7B843A06060086600C68]]>
+          </Values>
+        </Array>
+        <Variable Name="SongPositionInBeats"/>
+        <Array Name="SpecBandArray"/>
+        <Variable Name="Tempo"/>
+        <Group Name="ParameterIndicies">
+          <Children>
+            <Constant Name="P_SHOW_PIANO" Type="1"/>
+            <Constant Name="P_SHOW_NOTES" Type="1" Value="1" IntValue="1"/>
+            <Constant Name="P_SHOW_PARTICLES" Type="1" Value="2" IntValue="2"/>
+            <Constant Name="P_LIGHT_KEYS" Type="1" Value="3" IntValue="3"/>
+            <Constant Name="P_NOTE_DIR" Type="1" Value="4" IntValue="4"/>
+            <Constant Name="P_TRANSPOSE" Type="1" Value="5" IntValue="5"/>
+            <Constant Name="P_PREROLL" Type="1" Value="6" IntValue="6"/>
+            <Constant Name="P_COLOR_PALETTE" Type="1" Value="7" IntValue="7"/>
+            <Constant Name="P_PIANO_MODE" Type="1" Value="8" IntValue="8"/>
+            <Constant Name="P_NOTE_SPEED" Type="1" Value="9" IntValue="9"/>
+            <Constant Name="P_KEYBOARD_ANGLE" Type="1" Value="10" IntValue="10"/>
+            <Constant Name="P_CAMERA_X" Type="1" Value="11" IntValue="11"/>
+            <Constant Name="P_CAMERA_Y" Type="1" Value="12" IntValue="12"/>
+            <Constant Name="P_CAMERA_Z" Type="1" Value="13" IntValue="13"/>
+            <Constant Name="P_CAMERA_ANGLE" Type="1" Value="14" IntValue="14"/>
+            <Constant Name="P_NUM_KEYS" Type="1" Value="15" IntValue="15"/>
+            <Constant Name="P_FIRST_KEY" Type="1" Value="16" IntValue="16"/>
+            <Constant Name="P_TEMPO" Type="1" Value="17" IntValue="17"/>
+            <Constant Name="P_PIANOLINK" Type="1" Value="18" IntValue="18"/>
+          </Children>
+        </Group> <!-- ParameterIndicies -->
+
+      </Children>
+    </Group> <!-- FLStudio -->
+
+    <Group Name="PianoData" Comment="Data for the piano">
+      <Children>
+        <Constant Name="Alignment"/>
+        <Constant Name="KeySpacing" Value="1.5"/>
+        <Constant Name="MaxModelY" Value="200"/>
+        <Array Name="ActiveNotes" Type="3" Dimensions="1" SizeDim1="128" SizeDim2="16"/>
+        <Constant Name="NoteSpeedRange" Value="186" IntValue="186"/>
+        <Constant Name="NoteSpeedBase" Value="100" IntValue="100"/>
+        <Variable Name="BeatCounter" Type="1"/>
+        <Array Name="ChannelColors" Dimensions="2" SizeDim1="11" SizeDim2="16" SizeDim3="3" Persistent="255">
+          <Values>
+<![CDATA[789CD595F96F4D4114C76F42828458237EB09488D8820489887B8E204242882521116AF94124B6C416F1C32B452B2DD556EDEDAB5D8B166D55D13E6DD59296D74DDAAAEEA8DAAAB6AA5AE67B6EE7BEA7FA0F78C9E47DEFBD3367BE67E673660CC3C186FD73F05D978B3C7AB27C2B2F5BCA464BBF9FCDCDA4F5C7FA7AD368357EB7BFBF3DFEF4A941F2ADF1DB56FED1B45DF4C9137DD9337E83C43A18D28D3CE3DBB3D62F6A56D95A8FB99532D1D6890909F4B379873C9F3D33981B3E6EE4FA0FEBF94D5D1D7DFDB2994B8A177358682861EE8CF4291CEDF491FEB131C359CD6DE2FDA1F05E5C595131E9DBD72D8CDCA29D4EF3C3FB755C585040F05553BD92AF5FBB4639D9B3E869E142D53F9C76EDDC49F7B3A6F397CF9BE8F8B1639498308EF11DFD90F3E54B23E95E6626851CE82AB9E5E7E5D1F7C6467A5D5B6B3E2B2991E7ABF1F1E6F3D2528A8D892178C17BAC9DF268E6BADDE4E73048AFAADA075BFB391CB6565EBDFAB8283020C08456F9200E59FD0DD663941756F39235D607798BBE1A3F8603033A2AAF2126F6FC54F440D9C75CF75CBE993C41ED430D5556F8329E919FF2CBAF6B57737EDE3C6EED45CD61DE484A12ADF23073B2B3455FBC3094AAABAA44ABB1B21ED087232228606F078973333999C2427B882E2E2AA2C893FD44A3AF1ACFEA9DB93FB80B275C1F0B0F1415D99FD352896FA5A450DC9551FCE8E14CD943BC2B2C58C0CEA801EC7E32872BCA9709CBC8E14DDD1AAEAA5C2E398091D6FCEA75B3B4D3D68A75AFF73E36970F1FCC604F9F0DA21FE7CCB6E3FE686A220FAFE3C87BBEE7A54B3838A8B3C455FFFCEAE54BD27591993115EB6DEAD87BF7EC69D34B6BFF6AAF4D8F36BC6B99BCFAB499A377ED6B365AE2D83982A1B6D6010C79CD656B30E389E9FBCF5AE187F8E004DEC1A1A50DD49F68783F7AA48FEE03B645C33BB8B0FAB8081EA0E11DDCB6C4113FD08887FDB2C6FA8837688C2B2E5AA4E7129FD0F80ECEAD98BEE2191AFFDF1BB7B166DBBB0EC13E6A00DA8AE1160DF65103D0D659B05A34D8470D40837DD40034D8470D4023478C01FF601F350046C0396A00FC837DD400F807FBF806FEC13E6A0079817DE401FEC1BE670F2C8EB0FE383F353B18ABD9410CCD8E2B8D59B3131F379A353B984FB383B34FB3F3FBD72F7DCE737959196976D2525349B3131519499A1D75469366E7CEED49A4D9516B606A767066FECDFFFF9943467A3A05070549C37D003F689F1A1A082CE14EF1DFD58E7167DCCFCA229C13EFDEBE050B7438A237E31B9EE125F46077F11A73719870B12FB0939C959762477078584FF890F31C6CE1FE423B7F6E8878444B4A1C2F7726DABDCC698CBB0FAD207F3EBF7FB7565A75D50AC65D8986FBF60F7B9B4E1F]]>
+          </Values>
+        </Array>
+        <Variable Name="ClearAllNotes" Type="1"/>
+        <Variable Name="FirstPianoKey" Type="1"/>
+        <Variable Name="KeyAngle"/>
+        <Array Name="KeyArray" Type="3" SizeDim1="128"/>
+        <Variable Name="KeyStart"/>
+        <Variable Name="LastBeat"/>
+        <Variable Name="LastBeatTime"/>
+        <Variable Name="NoteAlpha"/>
+        <Variable Name="NoteDirection"/>
+        <Variable Name="NoteSpeed"/>
+        <Array Name="NoteState" Type="1" Dimensions="1" SizeDim1="128" SizeDim2="16" Persistent="255">
+          <Values>
+<![CDATA[789CEDC1010D000000C2A0F74F6D0E37A00000000000000080770320000001]]>
+          </Values>
+        </Array>
+        <Variable Name="NoteStart"/>
+        <Variable Name="NoteStep"/>
+        <Variable Name="NumPianoKeys" Type="1"/>
+        <Variable Name="PianoMode"/>
+        <Variable Name="PlayerY"/>
+        <Variable Name="Preroll"/>
+        <Variable Name="SongBar" Type="1"/>
+        <Variable Name="ViewportSize" Type="6"/>
+        <Model Name="NoteModel" Position="0 0 -1" Scale="1.5 1 1">
+          <Definitions>
+            <Variable Name="inNote" Comment="is the note hitting keyboard?"/>
+            <Variable Name="noteChannel" Type="1"/>
+            <Variable Name="noteIndex" Type="1"/>
+            <Variable Name="noteIsActive"/>
+            <Variable Name="startTime"/>
+            <Variable Name="totalDelta"/>
+            <Variable Name="notePosY"/>
+            <Material Name="noteMaterial" Light="0" Shininess="0.05" Blend="2" DrawBackFace="255" Shader="noteShader">
+              <Textures>
+                <MaterialTexture Name="NoteTexture" TexCoords="1"/>
+              </Textures>
+            </Material>
+            <Shader Name="noteShader" UpdateVarsOnEachUse="255">
+              <VertexShaderSource>
+<![CDATA[#version 120
+
+uniform float uPianoMode;
+uniform float uNoteDirection;
+
+varying vec4 fColor;
+
+vec4 fPos;
+
+#define uKeySpacing 1.5
+#define PI 3.14159265358
+
+void main()
+{
+  vec4 brightness;
+
+  float shinyDir = abs(uPianoMode - uNoteDirection); // if ints, this'd be a xor
+
+  fPos = gl_ProjectionMatrix * gl_ModelViewMatrix * gl_Vertex;
+  float distance = sin(gl_Vertex.y) * (1.0 - shinyDir) +  (0.3 - sin(gl_Vertex.y))*(shinyDir);
+  brightness = vec4(distance,distance,distance,1);
+
+  fColor = brightness + gl_Color;
+
+  gl_Position = fPos;
+}]]>
+              </VertexShaderSource>
+              <FragmentShaderSource>
+<![CDATA[#version 120
+
+varying vec4 fColor;
+
+void main()
+{
+    gl_FragColor = fColor;
+}]]>
+              </FragmentShaderSource>
+              <UniformVariables>
+                <ShaderVariable Name="uPianoMode" VariableName="uPianoMode" VariableRef="PianoMode"/>
+                <ShaderVariable Name="uNoteDirection" VariableName="uNoteDirection" VariableRef="NoteDirection"/>
+              </UniformVariables>
+            </Shader>
+          </Definitions>
+          <OnUpdate>
+            <ZExpression Name="UpdateNotes">
+              <Expression>
+<![CDATA[int doRemove = 0;
+
+// Move note
+CurrentModel.Position.y += NoteStep;
+
+// Update note's length if it's still being played
+if (CurrentModel.noteIsActive)
+{
+  CurrentModel.totalDelta += App.DeltaTime;
+  CurrentModel.Scale.Y     = CurrentModel.totalDelta*NoteSpeed;
+  CurrentModel.Position.y -= NoteStep/2;
+}
+
+// Is the note currently crossing the keyboard?
+if ( ((NoteDirection == 0) && (CurrentModel.Position.y - CurrentModel.Scale.Y/2 <= 0)) ||
+     ((NoteDirection == 1) && (CurrentModel.Position.y + CurrentModel.Scale.Y/2 >= 0)) )
+{
+  inNote = 1;
+}
+else
+{
+  inNote = 0;
+}
+
+int p1 = currentModel.Position.y;
+int p2 = NoteStart;
+int p3 = CurrentModel.Scale.y;
+
+// In the player mode, we don't want notes going past the piano...
+if (PianoMode == 1)
+{
+  if  (inNote)
+  {
+    if (CurrentModel.noteIsActive)
+    {
+      CurrentModel.Position.y = NoteStart/2.0;
+    }
+    else
+    {
+      CurrentModel.Position.Y -= NoteStep/2.0;
+    }
+
+    CurrentModel.Scale.Y = abs(CurrentModel.Position.y*2);
+  }
+}
+
+// If we're inside the note, we don't want it larger than source->0.
+// Otherwise it flows through the keyboard.
+notePosY = CurrentModel.Position.y;
+
+// End note if it's not the current one
+if (ActiveNotes[CurrentModel.noteIndex, CurrentModel.noteChannel] != CurrentModel)
+{
+  CurrentModel.noteIsActive = 0;
+}
+
+int key = keyFromNote(CurrentModel.noteIndex);
+
+// PianoMode 1 is player mode, 0 is shooter mode.
+if (PianoMode == 1)
+{
+  int clearKey = 0;
+
+  // Clear the models as they fully cross the piano
+  if ( ((NoteDirection == 0) && (CurrentModel.Position.y - CurrentModel.Scale.Y/2 < 0)) ||
+      ((NoteDirection == 1) && (CurrentModel.Position.y + CurrentModel.Scale.Y/2 > 0)))
+  {
+    clearKey = 1;
+  }
+
+  if (clearKey)
+  {
+    doRemove = 1;
+    // deactivate key here
+    if (key >= 0)
+    {
+      KeyArray[key].isDown = 0;
+    }
+  }
+  else
+  {
+    // Start the key down when the model hits / while it's present.
+    if ((key >= 0) && (KeyArray[key].isDown == 0))
+    {
+      if (inNote == 1)
+      {
+        KeyArray[key].isDown = 1;
+        KeyArray[key].lastChannel = CurrentModel.noteChannel;
+        KeyArray[key].Position.Y = -1;
+        KeyArray[key].Position.Z = -1;
+      }
+    }
+
+  }
+}
+
+
+// Set note color
+int colorSet = Parameters[P_COLOR_PALETTE] * 1000;
+NoteColor.Color.R = ChannelColors[colorSet,CurrentModel.noteChannel,0];
+NoteColor.Color.G = ChannelColors[colorSet,CurrentModel.noteChannel,1];
+NoteColor.Color.B = ChannelColors[colorSet,CurrentModel.noteChannel,2];
+NoteColor.Color.A = NoteAlpha;
+NoteMaterial.Color = NoteColor.Color;
+
+// Destroy note if it's out of range and not active
+if (CurrentModel.noteIsActive == 0)
+{
+
+  if (PianoMode == 0)
+  {
+    if ((CurrentModel.Position.y < -MaxModelY) ||
+        (CurrentModel.Position.y > MaxModelY))
+    {
+      doRemove = 1;
+    }
+  }
+}
+// Clear all notes if flag set
+if (ClearAllNotes > 0)
+{
+  doRemove = 1;
+}
+
+if (doRemove)
+{
+  if (ActiveNotes[CurrentModel.NoteIndex, CurrentModel.noteChannel] == CurrentModel)
+  {
+    ActiveNotes[CurrentModel.NoteIndex, CurrentModel.noteChannel] = null;
+  }
+
+  @RemoveModel();
+}]]>
+              </Expression>
+            </ZExpression>
+          </OnUpdate>
+          <OnRender>
+            <Condition Name="ShowNotes" Expression="return (Parameters[P_SHOW_NOTES] &gt; 0.5);">
+              <OnTrue>
+                <RenderSetColor Name="NoteColor" Color="1 0 0.502 0.9"/>
+                <UseMaterial Material="noteMaterial"/>
+                <RenderSprite/>
+              </OnTrue>
+            </Condition>
+          </OnRender>
+        </Model>
+        <Model Name="PianoKeyModel" Scale="0.1 0.1 0.1">
+          <Definitions>
+            <Constant Name="ColorReturnStep" Value="0.1"/>
+            <Constant Name="KeyReturnStep" Value="0.3"/>
+            <Variable Name="isDown" Type="1"/>
+            <Variable Name="lastChannel" Type="1"/>
+            <Variable Name="materialType" Comment="0=Active" Type="1"/>
+            <Variable Name="noteValue" Type="1"/>
+            <Variable Name="particleColor" Type="8"/>
+            <Variable Name="pressStep" Type="7"/>
+            <Variable Name="visible" Type="1"/>
+            <Mesh Name="KeyC_Origin">
+              <Producers>
+                <MeshImport>
+                  <MeshData>
+<![CDATA[789C354ECB0DC2500C73DBC7477C2406E0C008AC0037A6E84A2CC1029C3856ECC199011005F567EC54247A8EE338D1DB00D8C25155E4F31E14B783F811D8AB5E7680F1F400FE6805301FD1DDF53C6259BA373AAC31C2D55373A3FD5633144A4F3324611FDA1C2DA7B1DDEAD931302147CF9603ED9F28C7DBF6345CC07BD60B555F33FFB0E32BF83AFA814BD47CEBC20C2B75401F3FCBF592F63234E2B9BCDFD013BAB8FF035378756B]]>
+                  </MeshData>
+                </MeshImport>
+              </Producers>
+            </Mesh>
+            <Mesh Name="KeyD_Origin">
+              <Producers>
+                <MeshImport>
+                  <MeshData>
+<![CDATA[789C358F3D12014114847BB17E5640E0000231AE40E6147B15B973C85D812A077000B15480AAB5B35AF70C3B353D6FFAEB37F5760260A61DB83892B793CA2D7058A95E034B9DFB2960DD5C81BFDA015C272D4B60374F6A723927B5435AFDD92B4BD249D29434B59ABAD77EBA67686BD9CFD09136D12B50B31F5FAAB4DB220D53A62BCAE805560C746F4FCB34E55BC8F1EF6DF44AAE0E484D9ECC62BEE69BA91E4596618C07EF7CB110B55F60A854FA9B979203F9E1770FFCFCE6F41CAD38BFEB8A9ED4F92F49C68E8A]]>
+                  </MeshData>
+                </MeshImport>
+              </Producers>
+            </Mesh>
+            <Mesh Name="KeyE_Origin">
+              <Producers>
+                <MeshImport>
+                  <MeshData>
+<![CDATA[789C4D8F3172C2301444570E2436130A663800450E902B40C715D4B8A5CCA5E8A9E9E01ED47464D2648C1DBCEC4A9889345AFFFFFEEAEB7B0EE0035E5F07F27C4C21764BC52BE053DFED02B0AE4FC0A02680E3AC750DEC37595D21B39A9031E6AE66753DD4ECB7F2DFCAD518ED0878D1B6336024BD253641C731FE14FBD811F0AAC394D9115469D8D1D99BF630CD55F43D39CC27CA03FAC45B9628122F51A1659EB451874A4EBF533CBAF4EA4B168F7F2930C68FE6BAD077AB444BCC9E2F36E295F45BF154B4E32FEF0A71956A]]>
+                  </MeshData>
+                </MeshImport>
+              </Producers>
+            </Mesh>
+            <Mesh Name="KeyF_Origin">
+              <Producers>
+                <MeshImport>
+                  <MeshData>
+<![CDATA[789C354EC90D02410CF3EE0E8738240AE04109B4003FAAD856288126688017CF157DF0A600C4A1BD8C9D1589C6711C279A1580351C55453E6E2247E0BA13DF035BD5F306301EEEC01FAD00E603BABB9C062C4BF746873546B87A6A6EB4DF6A8642E9698624EC429BA2E138B61B3D3B7A26E4E8D8B0A7FD23E570DB9E9A3378CF7AA1EA6BE61FB67C065F46DF738E375FBA30C1421DD0C5CF72BDA4BD0CB5782EEF37F48436EEFF00DDF875EB]]>
+                  </MeshData>
+                </MeshImport>
+              </Producers>
+            </Mesh>
+            <Mesh Name="KeyG_Origin">
+              <Producers>
+                <MeshImport>
+                  <MeshData>
+<![CDATA[789C358F3D12014114847BFD5B01819C40247205320710EF555C4622172BEE21960A50B5EC6ADDF3A8A9E979D35FBFA9376300336D727222AF67955BF2B854BD02163A7753D3DD747D01FE6A07701D5A14C07E1E6AB23984DA21AD40F41405E924694A9A5A4DDD6B3FEE199A5AF633B4A475F272BCD94B2F95DA4D919A91E9883279154B56746F57CB34F20DB4F1EFADF54A5B1D909A3C98A5FC9B2F463D4C2CC30877DEF8642E6A3FC740A9F8CD53C9BEFCEA77AFF8F9CDE9391A697ED7253DA9F35F3F768EC6]]>
+                  </MeshData>
+                </MeshImport>
+              </Producers>
+            </Mesh>
+            <Mesh Name="KeyA_Origin">
+              <Producers>
+                <MeshImport>
+                  <MeshData>
+<![CDATA[789C358F3116C140188467439E8882C201140EE00A74540A7DAEE2321AA7C01D946AAD02EF9130667663F7BDD9F9BF99BCDD8C014CE1B53E92D793CC1638CCE517C04CE76E02589717E0AF26807DD2AA02F6ABA44E36E7A426A4D5CBACAA483749A7A453AB537F6B9EE6808EB6794057FA892CD3FE465F2AEBC456C38679DB459C5F229E7BDAA6E62F66C85120F90F0B4D41691E930743ECD77C33F961CC0246B8F3C6274BA5E625066AA5BB9E6AF6C59B76F6AD993A35EBF8DABC7DEF9B5DFD83FB3F912E8BF8]]>
+                  </MeshData>
+                </MeshImport>
+              </Producers>
+            </Mesh>
+            <Mesh Name="KeyB_Origin">
+              <Producers>
+                <MeshImport>
+                  <MeshData>
+<![CDATA[789C3D4DC10DC2300CBC505A104888017830022BC08F0733640456601976E00B7BF0660054556AD21E3E47C551CEE7F3D9DE02D841717B929F9708F0381A3F0107CBF73D203CBF8109A500E20563042ED782EA904285728CA526E511F21F4040654FDD80B9E1E0DA12893546E3D97E71D48699BD394A5563BA944C5D4173D2351B7C3631B3C1CCF5060BDF257F6F7AE5FB605DEDA75FCAFC726447F9373E33708D962D7F06C7738D]]>
+                  </MeshData>
+                </MeshImport>
+              </Producers>
+            </Mesh>
+            <Mesh Name="KeySharp_Powder">
+              <Producers>
+                <MeshImport>
+                  <MeshData>
+<![CDATA[789C3D8C5D0E40400C8467FD44789238D13A8157B7F1EC142E42C4ADD8D8D16E314DDAAF9DB60D8016AA7DDFB6F9109880C10BF7C0E2D5F1236979ED94349B80AF1AE197B243F6522E01E9ACBFD3A6B2CDC99315029D702913FDA45C487C7F2303232FB905EAE4910F4CA74757]]>
+                  </MeshData>
+                </MeshImport>
+              </Producers>
+            </Mesh>
+            <Material Name="ActiveMaterial"/>
+            <Material Name="BlackKeyMaterial" Color="0.1608 0.1608 0.1608 1" Shininess="0.14"/>
+            <Material Name="WhiteKeyMaterial"/>
+          </Definitions>
+          <OnUpdate>
+            <ZExpression>
+              <Expression>
+<![CDATA[int colorSet = Parameters[P_COLOR_PALETTE] * 1000;
+if (visible)
+{
+  ActiveMaterial.Color.R = channelColors[colorSet,currentModel.lastChannel,0];
+  ActiveMaterial.Color.G = channelColors[colorSet,currentModel.lastChannel,1];
+  ActiveMaterial.Color.B = channelColors[colorSet,currentModel.lastChannel,2];
+
+  if (isDown > 0)
+  {
+     sprayEmitter.ParticlesPerSecond = 10;
+
+    currentModel.particleColor[0] = channelColors[colorSet,currentModel.lastChannel,0];
+    currentModel.particleColor[1] = channelColors[colorSet,currentModel.lastChannel,1];
+    currentModel.particleColor[2] = channelColors[colorSet,currentModel.lastChannel,2];
+    currentModel.particleColor[3] = 0.5;
+
+    if (Parameters[P_LIGHT_KEYS] > 0.5)
+    {
+      materialType = 2;
+    }
+    else
+    {
+      materialType = isNoteBlack(NoteValue);
+    }
+
+  }
+  else
+  {
+    // Sloppy but works - should make a filter class.
+    // This filters the keys as they are released so
+    // it isn't as digital
+    // Need to add in multiplier off delta time.
+
+    if (CurrentModel.Position.Y < -KeyReturnStep)
+      CurrentModel.Position.Y += KeyReturnStep;
+    else if (CurrentModel.Position.Y > KeyReturnStep)
+      CurrentModel.Position.Y -= KeyReturnStep;
+    else
+      CurrentModel.Position.Y = 0.0;
+
+    if (CurrentModel.Position.Z < -KeyReturnStep)
+      CurrentModel.Position.Z += KeyReturnStep;
+    else if (CurrentModel.Position.Z > KeyReturnStep)
+      CurrentModel.Position.Z -= KeyReturnStep;
+    else
+      CurrentModel.Position.Z = 0.0;
+
+
+    // Particle color
+    if (currentModel.particleColor[0] > ColorReturnStep)
+      CurrentModel.particleColor[0] -= ColorReturnStep;
+    else
+      CurrentModel.particleColor[0] = 0;
+
+    if (currentModel.particleColor[1] > ColorReturnStep)
+      CurrentModel.particleColor[1] -= ColorReturnStep;
+    else
+      CurrentModel.particleColor[1] = 0;
+
+    if (currentModel.particleColor[2] > ColorReturnStep)
+      CurrentModel.particleColor[2] -= ColorReturnStep;
+    else
+      CurrentModel.particleColor[2] = 0;
+
+     sprayEmitter.ParticlesPerSecond = 0;
+    // Key material
+    materialType = isNoteBlack(NoteValue);
+  }
+}]]>
+              </Expression>
+            </ZExpression>
+          </OnUpdate>
+          <OnRender>
+            <Condition Name="If_Key_Is_Used" Expression="return (CurrentModel.visible == 1);">
+              <OnTrue>
+                <Condition Name="If_Show_Piano" Expression="return (Parameters[P_SHOW_PIANO] &gt; 0.5);">
+                  <OnTrue>
+                    <Condition Name="cond_is_it_active" Expression="return (materialType == 2);">
+                      <OnTrue>
+                        <UseMaterial Material="ActiveMaterial"/>
+                      </OnTrue>
+                      <OnFalse>
+                        <Condition Name="cond_is_it_black" Expression="return (materialType == 1);">
+                          <OnTrue>
+                            <UseMaterial Material="BlackKeyMaterial"/>
+                          </OnTrue>
+                          <OnFalse>
+                            <UseMaterial Material="WhiteKeyMaterial"/>
+                          </OnFalse>
+                        </Condition>
+                      </OnFalse>
+                    </Condition>
+                    <Condition Name="RenderC" Expression="return ((NoteValue % 12) == 0);">
+                      <OnTrue>
+                        <RenderMesh Mesh="KeyC_Origin"/>
+                      </OnTrue>
+                    </Condition>
+                    <Condition Name="RenderC1" Expression="return ((NoteValue % 12) == 1);">
+                      <OnTrue>
+                        <RenderMesh Mesh="KeySharp_Powder"/>
+                      </OnTrue>
+                    </Condition>
+                    <Condition Name="RenderD" Expression="return ((NoteValue % 12) == 2 );">
+                      <OnTrue>
+                        <RenderMesh Mesh="KeyD_Origin"/>
+                      </OnTrue>
+                    </Condition>
+                    <Condition Name="RenderD1" Expression="return ((NoteValue % 12) == 3);">
+                      <OnTrue>
+                        <RenderMesh Mesh="KeySharp_Powder"/>
+                      </OnTrue>
+                    </Condition>
+                    <Condition Name="RenderE" Expression="return ((NoteValue % 12) == 4);">
+                      <OnTrue>
+                        <RenderMesh Mesh="KeyE_Origin"/>
+                      </OnTrue>
+                    </Condition>
+                    <Condition Name="RenderF" Expression="return ((NoteValue % 12) == 5);">
+                      <OnTrue>
+                        <RenderMesh Mesh="KeyF_Origin"/>
+                      </OnTrue>
+                    </Condition>
+                    <Condition Name="RenderF1" Expression="return ((NoteValue % 12) == 6);">
+                      <OnTrue>
+                        <RenderMesh Mesh="KeySharp_Powder"/>
+                      </OnTrue>
+                    </Condition>
+                    <Condition Name="RenderG" Expression="return ((NoteValue % 12) == 7);">
+                      <OnTrue>
+                        <RenderMesh Mesh="KeyG_Origin"/>
+                      </OnTrue>
+                    </Condition>
+                    <Condition Name="RenderG1" Expression="return ((NoteValue % 12) == 8 );">
+                      <OnTrue>
+                        <RenderMesh Mesh="KeySharp_Powder"/>
+                      </OnTrue>
+                    </Condition>
+                    <Condition Name="RenderA" Expression="return ((NoteValue % 12) == 9);">
+                      <OnTrue>
+                        <RenderMesh Mesh="KeyA_Origin"/>
+                      </OnTrue>
+                    </Condition>
+                    <Condition Name="RenderA1" Expression="return ((NoteValue % 12) == 10);">
+                      <OnTrue>
+                        <RenderMesh Mesh="KeySharp_Powder"/>
+                      </OnTrue>
+                    </Condition>
+                    <Condition Name="RenderB" Expression="return ((NoteValue % 12) == 11);">
+                      <OnTrue>
+                        <RenderMesh Mesh="KeyB_Origin"/>
+                      </OnTrue>
+                    </Condition>
+                  </OnTrue>
+                </Condition>
+                <Condition Name="If_Show_Particles" Expression="return (Parameters[P_SHOW_PARTICLES] &gt; 0.5);">
+                  <OnTrue>
+                    <RenderParticles Name="sprayEmitter" ParticlesPerSecond="10" Spread="50" ParticleWidth="8" ParticleHeight="8" Speed="20" SpeedRange="10" Radius="5" ParticleLifetime="1" AnimateAlpha="-0.5" AnimateSize="-7" Damping="1">
+                      <OnEmitExpression>
+<![CDATA[//Emit particle.
+//PColor : particle color, PAngle : particle angle
+PAngle = random(0,.2);
+
+float bright = 0;
+if (currentModel.isDown > 0)
+{
+  bright = random(0.5,0.5);
+}
+PColor.r = currentModel.particleColor[0] - bright;
+PColor.g = currentModel.particleColor[1] - bright;
+PColor.b = currentModel.particleColor[2] - bright;]]>
+                      </OnEmitExpression>
+                    </RenderParticles>
+                  </OnTrue>
+                </Condition>
+              </OnTrue>
+            </Condition>
+          </OnRender>
+        </Model>
+      </Children>
+    </Group> <!-- PianoData -->
+
+  </Content>
+</ZApplication>
