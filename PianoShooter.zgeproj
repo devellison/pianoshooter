@@ -283,22 +283,22 @@ void OnMidiMessage(int status, int data1, int data2)
       onNoteOn(channel, data1,data2);
       break;
     case 0xa0: // polyphonic aftertouch
-      trace("PAT ch " + intToStr(channel));
+      //trace("PAT ch " + intToStr(channel));
       break;
     case 0xb0: // control change
-      trace("CC ch " + intToStr(channel));
+      //trace("CC ch " + intToStr(channel));
       break;
     case 0xc0: // program change
-      trace("PC ch " + intToStr(channel));
+      //trace("PC ch " + intToStr(channel));
       break;
     case 0xd0: // aftertouch
-      trace("AT ch " + intToStr(channel));
+      //trace("AT ch " + intToStr(channel));
       break;
     case 0xe0: // Pitch wheel
-      trace("PW ch " + intToStr(channel));
+      //trace("PW ch " + intToStr(channel));
       break;
     case 0xf0: // system messages
-      trace("SYS");
+      //trace("SYS");
       break;
     default: // ?
       trace("UNKNOWN MIDI: " + IntToStr(status) + "," + IntToStr(data1) + "," + IntToStr(data2));
