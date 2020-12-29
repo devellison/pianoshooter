@@ -79,19 +79,6 @@ void FindTempo()
   }
 }
 
-// Called when playing has started in FL Studio
-void onPlayingStart()
-{
-  isPlaying = 1;
-}
-
-// Called when playing ends
-void onPlayingEnd()
-{
-  isPlaying = 0;
-  //DumpParameters();
-}
-
 // Kills all note models on their next update.
 void clearNotes()
 {
@@ -107,6 +94,29 @@ void clearNotes()
      }
   }
   ClearAllNotes = 1;
+}
+
+void clearKeys()
+{
+  for (int i = 0; i < 128; ++i)
+  {
+    KeyArray[i].isDown = 0;
+  }
+}
+
+// Called when playing has started in FL Studio
+void onPlayingStart()
+{
+  isPlaying = 1;
+}
+
+// Called when playing ends
+void onPlayingEnd()
+{
+  isPlaying = 0;
+  clearNotes();
+  clearKeys();
+  //DumpParameters();
 }
 
 // Deactive note model when MIDI Note ends
@@ -134,9 +144,9 @@ void createNote(int c, int n,float v, int key)
   ActiveNotes[n,c].noteIndex = n;
   ActiveNotes[n,c].noteIsActive = 1;
   ActiveNotes[n,c].noteChannel = c;
-  ActiveNotes[n,c].Position.Z = 0;
   ActiveNotes[n,c].Position.Y = NoteStart;
-  ActiveNotes[n,c].Position.X = KeyStart + key*KeySpacing + Alignment;
+  ActiveNotes[n,c].Position.X = KeyArray[key].Position.X;
+  ActiveNotes[n,c].Position.Z = KeyArray[key].Position.Z;
 }
 
 // Pick the piano key for a note, or -1 if out of range.
@@ -189,8 +199,8 @@ void onNoteOn(int channel, int note, int velocity)
     {
       KeyArray[key].isDown = 1;
       KeyArray[key].lastChannel = channel;
-      KeyArray[key].Position.Y = -1;
-      KeyArray[key].Position.Z = -1;
+
+      KeyArray[key].Position.Y = KeyPositions[key,1] - 1;
     }
     createNote(channel,note,velocity, key);
   }
@@ -212,32 +222,86 @@ void onNoteOff(int channel, int note, int velocity)
   }
 }
 
+/*
+// Setup Arc
+// Does it make more sense to say it's always a half-circle, or that
+// 128 keys is a half circle, and so smaller keyboards have a smaller angle?
+for (int i = 0; i < NumPianoKeys; ++i)
+{
+//  KeyArray[i].Rotation.Y = 0.5*Parameters[P_ARC]*(i - NumPianoKeys/2.0)/NumPianoKeys;
+
+}
+*/
+
 // Set up the keyboard for number of keys and first key.
 void GenKeyboard(int firstKey, int numKeys)
 {
   NumPianoKeys = numKeys;
   FirstPianoKey = firstKey;
 
+  // Clamp firstpianokey to something reasonable.
+  if (FirstPianoKey + NumPianoKeys >= 128)
+  {
+    FirstPianoKey = 128 - NumPianoKeys;
+  }
+
+
   // Reset all keys
   for (int i = 0; i < 128; i++)
   {
     KeyArray[i].isDown = 0;
     KeyArray[i].visible = 0;
+
+    KeyPositions[i,0] = 0;
+    KeyPositions[i,1] = 0;
+    KeyPositions[i,2] = 0;
+
+    KeyArray[i].Position.X = 0;
     KeyArray[i].Position.Y = 0;
     KeyArray[i].Position.Z = 0;
   }
 
+
   // Calc start of keyboard on X
-  KeyStart = -(KeySpacing*NumPianoKeys*.5);
-  float curKeyX = KeyStart;
+  float arcKeySpacing = KeySpacing*.75;
+  KeyStart = -(arcKeySpacing*NumPianoKeys*.5);
+
+  int lastPianoKey = FirstPianoKey + NumPianoKeys;
 
   // Generate the piano keyboard
-  for (int i = 0; i < NumPianoKeys; i++)
+  for (int i = FirstPianoKey; i < LastPianoKey; i++)
   {
-    KeyArray[i].visible = 1;
-    KeyArray[i].Position.X = curKeyX;
-    curKeyX += KeySpacing;
-    KeyArray[i].NoteValue = i + FirstPianoKey;
+    int key = i - FirstPianoKey;
+
+    float flatPos = (i - 64.0) / 128.0;
+    float arcPos  = PI - (PI * i/128.0);
+
+    float flatLayoutX = flatPos * KeySpacing * 128;
+    float flatLayoutZ = 0;
+
+    float arcLayoutX =   arcKeySpacing  * 64 * cos(arcPos);
+    float arcLayoutZ =  -arcKeySpacing  * 64 * sin(arcPos);
+
+
+    // KeyPositions holds the "Base" key positions with arc.
+    // KeyArray objects have the actual current position, which may be
+    // modified by a press.
+
+    // So this averaging mostly works, but the key spacing isn't great inbetween states.
+    // TODO: Fix it.
+    KeyPositions[key,0] = arcLayoutX*Parameters[P_ARC] + ((1.0 -Parameters[P_ARC])* flatLayoutX );
+    KeyPositions[key,1] = 0;
+    KeyPositions[key,2] = arcLayoutZ*Parameters[P_ARC] + ((1.0 - Parameters[P_ARC]) * flatLayoutZ );
+
+    KeyArray[key].visible = 1;
+    KeyArray[key].NoteValue = i;
+
+    // Set Key objects to their new default position
+    KeyArray[key].Position.X = KeyPositions[key,0];
+    KeyArray[key].Position.Y = KeyPositions[key,1];
+    KeyArray[key].Position.Z = KeyPositions[key,2];
+
+    KeyArray[key].Rotation.Y = -.5*((i - 64.0)/128.0) * Parameters[P_ARC];
   }
 }
 
@@ -408,7 +472,9 @@ if (link > 0)
         case P_CAMERA_X:
         case P_CAMERA_Y:
         case P_CAMERA_Z:
-        case P_CAMERA_ANGLE:
+        case P_CAMERA_YAW:
+        case P_CAMERA_PITCH:
+        case P_ARC:
         case P_NUM_KEYS:
         case P_FIRST_KEY:
         case P_TEMPO:
@@ -431,26 +497,42 @@ if (link > 0)
     </ZExpression>
     <ZExpression Name="PianoShooterLogic">
       <Expression>
-<![CDATA[// Update cameras from sliders
+<![CDATA[// Update camera starting position from sliders
 App.CameraPosition.X = (Parameters[P_CAMERA_X]* 200) - 100;
 App.CameraPosition.Y = (Parameters[P_CAMERA_Y]* 200) - 100;
 App.CameraPosition.Z = 5 + (Parameters[P_CAMERA_Z]) * 200;
 
 
-// Rotate per camera angle and point the camera to look at center.
-float camAngle = Parameters[P_CAMERA_ANGLE] * 2 *  PI;
+vec3 cameraPos = App.CameraPosition;
+App.CameraRotation.X = 0;
+App.CameraRotation.Y = 0;
+App.CameraRotation.Z = 0;
 
-float newX = App.CameraPosition.X * cos(camAngle) -
-             App.CameraPosition.Z * sin(camAngle);
-float newZ = App.CameraPosition.X * sin(camAngle) +
-             App.CameraPosition.Z * cos(camAngle);
+// Apply Pitch first - we want to keep looking at the keyboard,
+// so when we change the camera pitch, we change the camera location too.
+cameraPos = App.CameraPosition;
+vec3 cameraRot = App.CameraRotation;
+float pitch = Parameters[P_CAMERA_PITCH]/4.0;
+float pitchPi = -2*pitch*(PI);
 
-App.CameraPosition.X = newX;
-App.CameraPosition.Z = newZ;
+App.CameraPosition.X = cameraPos[0];
+App.CameraPosition.Y = cameraPos[1]*cos(pitchPi)-cameraPos[2]*sin(pitchPi);
+App.CameraPosition.Z = cameraPos[1]*sin(pitchPi) + cameraPos[2]*cos(pitchPi);
 
-// Note: rotation is 0.0 - 1.0, so no PI needed.
-App.CameraRotation.Y = Parameters[P_CAMERA_ANGLE];
+App.CameraRotation.X = pitch;
 
+// Now apply Yaw similarly
+cameraPos = App.CameraPosition;
+float yaw = Parameters[P_CAMERA_YAW];
+float yawPi = -yaw*2*PI;
+
+App.CameraPosition.X = cameraPos[0] * cos(yawPi) + cameraPos[2]*sin(yawPi);
+App.CameraPosition.Y = cameraPos[1];
+App.CameraPosition.Z = -cameraPos[0]*sin(yawPi) + cameraPos[2]*cos(yawPi);
+App.CameraRotation.Y = yaw;
+
+
+// If we set clear on a previous cycle, reset it now.
 if (ClearAllNotes > 0)
 {
   ClearAllNotes = 0;
@@ -468,13 +550,14 @@ switch (preBeats)
 
 // If Piano start/length change, update the key array
 if ((NumPianoKeys  != floor(Parameters[P_NUM_KEYS]*116)+12) ||
-    (FirstPianoKey != floor(Parameters[P_FIRST_KEY]*116)))
+    (FirstPianoKey != floor(Parameters[P_FIRST_KEY]*116)) ||
+    (PianoArc != Parameters[P_ARC]))
 {
   NumPianoKeys  = Parameters[P_NUM_KEYS]*116 + 12;
   FirstPianoKey = Parameters[P_FIRST_KEY]*116;
+  PianoArc = Parameters[P_ARC];
 
   GenKeyboard(FirstPianoKey,NumPianoKeys);
-  clearNotes();
 }
 
 // Update key angle from sliders
@@ -504,6 +587,7 @@ if (PianoMode != floor(Parameters[P_PIANO_MODE]*1000))
   clearNotes();
 }
 
+// Update tempo as necessary if we're not in a selected tempo mode.
 FindTempo();
 
 // Update note speed from slider....
@@ -513,6 +597,7 @@ NoteStep = app.DeltaTime * NoteSpeed;
 // For player mode, start the notes 4 beats out
 PlayerY =   PreRoll*NoteSpeed / (Tempo/60.0);
 
+// Setup where notes start and their step size/direction
 if (PianoMode == 0)
 {
   NoteStart = 0;
@@ -522,7 +607,6 @@ else if (PianoMode == 1)
   NoteStart = PlayerY;
   NoteStep *= -1;
 }
-
 
 if (NoteDirection)
 {
@@ -557,7 +641,9 @@ Keyboard Angle
 Camera X
 Camera Y
 Camera Z
-Camera Angle
+Camera Yaw
+Camera Pitch
+Key Arc
 Num Keys
 First Key
 Tempo @list1000: Auto,60,70,80,90,100,110,120,130,140,150,160,170,180,190,200,210,220,230,240
@@ -566,9 +652,9 @@ PianoLink @list1000: None,A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S,T,U,V,W,X,Y,Z
           </StringValue>
         </Constant>
         <Variable Name="isPlaying" Type="1"/>
-        <Array Name="Parameters" SizeDim1="19" Persistent="255">
+        <Array Name="Parameters" SizeDim1="21" Persistent="255">
           <Values>
-<![CDATA[789C636068B06780631840E637D8ABB231DA374E75B6BF79EEBB1D5BA3A8BDE5160F7B843A06060086600C68]]>
+<![CDATA[789C636068B06780631840E637D8ABB231DA374E75B6BF79EEBB1D5BA3A8BDE5160F24B530F508000046F70C68]]>
           </Values>
         </Array>
         <Variable Name="SongPositionInBeats"/>
@@ -590,12 +676,14 @@ PianoLink @list1000: None,A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S,T,U,V,W,X,Y,Z
             <Constant Name="P_CAMERA_X" Type="1" Value="11" IntValue="11"/>
             <Constant Name="P_CAMERA_Y" Type="1" Value="12" IntValue="12"/>
             <Constant Name="P_CAMERA_Z" Type="1" Value="13" IntValue="13"/>
-            <Constant Name="P_CAMERA_ANGLE" Type="1" Value="14" IntValue="14"/>
-            <Constant Name="P_NUM_KEYS" Type="1" Value="15" IntValue="15"/>
-            <Constant Name="P_FIRST_KEY" Type="1" Value="16" IntValue="16"/>
-            <Constant Name="P_TEMPO" Type="1" Value="17" IntValue="17"/>
-            <Constant Name="P_PIANOLINK" Type="1" Value="18" IntValue="18"/>
-            <Constant Name="P_NUM_PARAMS" Type="1" Value="19" IntValue="19"/>
+            <Constant Name="P_CAMERA_YAW" Type="1" Value="14" IntValue="14"/>
+            <Constant Name="P_CAMERA_PITCH" Type="1" Value="15" IntValue="15"/>
+            <Constant Name="P_ARC" Type="1" Value="16" IntValue="16"/>
+            <Constant Name="P_NUM_KEYS" Type="1" Value="17" IntValue="17"/>
+            <Constant Name="P_FIRST_KEY" Type="1" Value="18" IntValue="18"/>
+            <Constant Name="P_TEMPO" Type="1" Value="19" IntValue="19"/>
+            <Constant Name="P_PIANOLINK" Type="1" Value="20" IntValue="20"/>
+            <Constant Name="P_NUM_PARAMS" Type="1" Value="21" IntValue="21"/>
           </Children>
         </Group> <!-- ParameterIndicies -->
 
@@ -604,22 +692,28 @@ PianoLink @list1000: None,A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S,T,U,V,W,X,Y,Z
 
     <Group Name="PianoData" Comment="Data for the piano">
       <Children>
-        <Constant Name="Alignment"/>
-        <Constant Name="KeySpacing" Value="1.5"/>
-        <Constant Name="MaxModelY" Value="200"/>
         <Array Name="ActiveNotes" Type="3" Dimensions="1" SizeDim1="128" SizeDim2="16"/>
-        <Constant Name="NoteSpeedRange" Value="186" IntValue="186"/>
-        <Constant Name="NoteSpeedBase" Value="100" IntValue="100"/>
-        <Variable Name="BeatCounter" Type="1"/>
         <Array Name="ChannelColors" Dimensions="2" SizeDim1="11" SizeDim2="16" SizeDim3="3" Persistent="255">
           <Values>
 <![CDATA[789CD595F96F4D4114C76F42828458237EB09488D8820489887B8E204242882521116AF94124B6C416F1C32B452B2DD556EDEDAB5D8B166D55D13E6DD59296D74DDAAAEEA8DAAAB6AA5AE67B6EE7BEA7FA0F78C9E47DEFBD3367BE67E673660CC3C186FD73F05D978B3C7AB27C2B2F5BCA464BBF9FCDCDA4F5C7FA7AD368357EB7BFBF3DFEF4A941F2ADF1DB56FED1B45DF4C9137DD9337E83C43A18D28D3CE3DBB3D62F6A56D95A8FB99532D1D6890909F4B379873C9F3D33981B3E6EE4FA0FEBF94D5D1D7DFDB2994B8A177358682861EE8CF4291CEDF491FEB131C359CD6DE2FDA1F05E5C595131E9DBD72D8CDCA29D4EF3C3FB755C585040F05553BD92AF5FBB4639D9B3E869E142D53F9C76EDDC49F7B3A6F397CF9BE8F8B1639498308EF11DFD90F3E54B23E95E6626851CE82AB9E5E7E5D1F7C6467A5D5B6B3E2B2991E7ABF1F1E6F3D2528A8D892178C17BAC9DF268E6BADDE4E73048AFAADA075BFB391CB6565EBDFAB8283020C08456F9200E59FD0DD663941756F39235D607798BBE1A3F8603033A2AAF2126F6FC54F440D9C75CF75CBE993C41ED430D5556F8329E919FF2CBAF6B57737EDE3C6EED45CD61DE484A12ADF23073B2B3455FBC3094AAABAA44ABB1B21ED087232228606F078973333999C2427B882E2E2AA2C893FD44A3AF1ACFEA9DB93FB80B275C1F0B0F1415D99FD352896FA5A450DC9551FCE8E14CD943BC2B2C58C0CEA801EC7E32872BCA9709CBC8E14DDD1AAEAA5C2E398091D6FCEA75B3B4D3D68A75AFF73E36970F1FCC604F9F0DA21FE7CCB6E3FE686A220FAFE3C87BBEE7A54B3838A8B3C455FFFCEAE54BD27591993115EB6DEAD87BF7EC69D34B6BFF6AAF4D8F36BC6B99BCFAB499A377ED6B365AE2D83982A1B6D6010C79CD656B30E389E9FBCF5AE187F8E004DEC1A1A50DD49F68783F7AA48FEE03B645C33BB8B0FAB8081EA0E11DDCB6C4113FD08887FDB2C6FA8837688C2B2E5AA4E7129FD0F80ECEAD98BEE2191AFFDF1BB7B166DBBB0EC13E6A00DA8AE1160DF65103D0D659B05A34D8470D40837DD40034D8470D4023478C01FF601F350046C0396A00FC837DD400F807FBF806FEC13E6A0079817DE401FEC1BE670F2C8EB0FE383F353B18ABD9410CCD8E2B8D59B3131F379A353B984FB383B34FB3F3FBD72F7DCE737959196976D2525349B3131519499A1D75469366E7CEED49A4D9516B606A767066FECDFFFF9943467A3A05070549C37D003F689F1A1A082CE14EF1DFD58E7167DCCFCA229C13EFDEBE050B7438A237E31B9EE125F46077F11A73719870B12FB0939C959762477078584FF890F31C6CE1FE423B7F6E8878444B4A1C2F7726DABDCC698CBB0FAD207F3EBF7FB7565A75D50AC65D8986FBF60F7B9B4E1F]]>
           </Values>
         </Array>
+        <Array Name="KeyArray" Type="3" SizeDim1="128"/>
+        <Array Name="KeyPositions" Dimensions="1" SizeDim1="128" SizeDim2="3" Persistent="255">
+          <Values>
+<![CDATA[789C63601805A360148C82513012010006000001]]>
+          </Values>
+        </Array>
+        <Constant Name="Alignment"/>
+        <Constant Name="KeyArcSpacing" Value="5"/>
+        <Constant Name="KeySpacing" Value="1.5"/>
+        <Constant Name="MaxModelY" Value="200"/>
+        <Constant Name="NoteSpeedRange" Value="186" IntValue="186"/>
+        <Constant Name="NoteSpeedBase" Value="100" IntValue="100"/>
+        <Variable Name="BeatCounter" Type="1"/>
         <Variable Name="ClearAllNotes" Type="1"/>
         <Variable Name="FirstPianoKey" Type="1"/>
         <Variable Name="KeyAngle"/>
-        <Array Name="KeyArray" Type="3" SizeDim1="128"/>
         <Variable Name="KeyStart"/>
         <Variable Name="LastBeat"/>
         <Variable Name="LastBeatTime"/>
@@ -634,6 +728,7 @@ PianoLink @list1000: None,A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S,T,U,V,W,X,Y,Z
         <Variable Name="NoteStart"/>
         <Variable Name="NoteStep"/>
         <Variable Name="NumPianoKeys" Type="1"/>
+        <Variable Name="PianoArc"/>
         <Variable Name="PianoMode"/>
         <Variable Name="PlayerY"/>
         <Variable Name="Preroll"/>
@@ -641,9 +736,9 @@ PianoLink @list1000: None,A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S,T,U,V,W,X,Y,Z
         <Variable Name="ViewportSize" Type="6"/>
         <Model Name="NoteModel" Position="0 0 -1" Scale="1.5 1 1">
           <Definitions>
+            <Variable Name="noteIndex" Type="1"/>
             <Variable Name="inNote" Comment="is the note hitting keyboard?"/>
             <Variable Name="noteChannel" Type="1"/>
-            <Variable Name="noteIndex" Type="1"/>
             <Variable Name="noteIsActive"/>
             <Variable Name="startTime"/>
             <Variable Name="totalDelta"/>
@@ -789,8 +884,7 @@ if (PianoMode == 1)
       {
         KeyArray[key].isDown = 1;
         KeyArray[key].lastChannel = CurrentModel.noteChannel;
-        KeyArray[key].Position.Y = -1;
-        KeyArray[key].Position.Z = -1;
+        KeyArray[key].Position.Y = KeyPositions[key,1] - 1;
       }
     }
 
@@ -938,6 +1032,7 @@ if (doRemove)
             <ZExpression>
               <Expression>
 <![CDATA[int colorSet = Parameters[P_COLOR_PALETTE] * 1000;
+
 if (visible)
 {
   ActiveMaterial.Color.R = channelColors[colorSet,currentModel.lastChannel,0];
@@ -969,21 +1064,31 @@ if (visible)
     // This filters the keys as they are released so
     // it isn't as digital
     // Need to add in multiplier off delta time.
+    int key = keyFromNote(CurrentModel.NoteValue);
+    if (key > -1)
+    {
+      // Have to do X now for arc
+      if (CurrentModel.Position.X - KeyPositions[key,0] < -KeyReturnStep)
+        CurrentModel.Position.X += KeyReturnStep;
+      else if (CurrentModel.Position.X - KeyPositions[key,0]> KeyReturnStep)
+        CurrentModel.Position.X -= KeyReturnStep;
+      else
+        CurrentModel.Position.X = KeyPositions[key,0];
 
-    if (CurrentModel.Position.Y < -KeyReturnStep)
-      CurrentModel.Position.Y += KeyReturnStep;
-    else if (CurrentModel.Position.Y > KeyReturnStep)
-      CurrentModel.Position.Y -= KeyReturnStep;
-    else
-      CurrentModel.Position.Y = 0.0;
+      if (CurrentModel.Position.Y - KeyPositions[key,1] < -KeyReturnStep)
+        CurrentModel.Position.Y += KeyReturnStep;
+      else if (CurrentModel.Position.Y - KeyPositions[key,1]> KeyReturnStep)
+        CurrentModel.Position.Y -= KeyReturnStep;
+      else
+        CurrentModel.Position.Y = KeyPositions[key,1];
 
-    if (CurrentModel.Position.Z < -KeyReturnStep)
-      CurrentModel.Position.Z += KeyReturnStep;
-    else if (CurrentModel.Position.Z > KeyReturnStep)
-      CurrentModel.Position.Z -= KeyReturnStep;
-    else
-      CurrentModel.Position.Z = 0.0;
-
+      if (CurrentModel.Position.Z - KeyPositions[key,2] < -KeyReturnStep)
+        CurrentModel.Position.Z += KeyReturnStep;
+      else if (CurrentModel.Position.Z - KeyPositions[key,2] > KeyReturnStep)
+        CurrentModel.Position.Z -= KeyReturnStep;
+      else
+        CurrentModel.Position.Z = KeyPositions[key,2];
+    }
 
     // Particle color
     if (currentModel.particleColor[0] > ColorReturnStep)
