@@ -31,6 +31,41 @@ void DumpParameters()
    }
 }
 
+vec3 getColor(int channel, int noteIndex)
+{
+  vec3 curColor;
+  int colorSet = Parameters[P_COLOR_PALETTE] * 1000;
+
+  if (Parameters[P_COLOR_CHANNEL] > 0.5)
+  {
+    curColor[0] = ChannelColors[colorSet,channel,0];
+    curColor[1] = ChannelColors[colorSet,channel,1];
+    curColor[2] = ChannelColors[colorSet,channel,2];
+  }
+  else
+  {
+    int index = floor(noteIndex / 8.5);
+    float distance = (noteIndex - floor(noteIndex/8.5)*8.5)/16.0;
+
+    vec3 color1;
+    vec3 color2;
+    color1[0] = ChannelColors[colorSet,index,0];
+    color1[1] = ChannelColors[colorSet,index,1];
+    color1[2] = ChannelColors[colorSet,index,2];
+    color2[0] = ChannelColors[colorSet,index+1,0];
+    color2[1] = ChannelColors[colorSet,index+1,1];
+    color2[2] = ChannelColors[colorSet,index+1,2];
+
+    curColor[0] = color1[0]*(1.0 - distance) + color2[0]*distance;
+    curColor[1] = color1[1]*(1.0 - distance) + color2[1]*distance;
+    curColor[2] = color1[2]*(1.0 - distance) + color2[2]*distance;
+
+
+  }
+
+
+  return curColor;
+}
 // TODO - fix this.
 // Really awful tap tempo - can we just query it?
 // Ok - now we take a combo box so you can at least
@@ -82,6 +117,7 @@ void FindTempo()
 // Kills all note models on their next update.
 void clearNotes()
 {
+  trace("Clear Notes");
   for (int c = 0; c < 16; c++)
   {
      for (int n = 0; n < 128; n++)
@@ -98,6 +134,7 @@ void clearNotes()
 
 void clearKeys()
 {
+  trace("Clear Keys");
   for (int i = 0; i < 128; ++i)
   {
     KeyArray[i].isDown = 0;
@@ -135,6 +172,7 @@ void endNote(int c, int n, int key)
   ActiveNotes[n,c] = null;
 }
 
+
 // Create node model on MIDI start note
 void createNote(int c, int n,float v, int key)
 {
@@ -144,7 +182,14 @@ void createNote(int c, int n,float v, int key)
   }
 
   ActiveNotes[n,c] = createModel(NoteModel);
-
+  if (Parameters[P_USE_VELOCITY] > 0.5)
+  {
+    ActiveNotes[n,c].vel = v/127.0;
+  }
+  else
+  {
+    ActiveNotes[n,c].vel = 1.0;
+  }
   ActiveNotes[n,c].startTime = app.DeltaTime;
   ActiveNotes[n,c].noteIndex = n;
   ActiveNotes[n,c].noteIsActive = 1;
@@ -504,7 +549,13 @@ if (link > 0)
     </ZExpression>
     <ZExpression Name="PianoShooterLogic">
       <Expression>
-<![CDATA[// Update camera starting position from sliders
+<![CDATA[if (LastTime != 0)
+{
+  CurDelta = App.Time - LastTime;
+}
+LastTime = App.Time;
+
+// Update camera starting position from sliders
 App.CameraPosition.X = (Parameters[P_CAMERA_X]* 200) - 100;
 App.CameraPosition.Y = (Parameters[P_CAMERA_Y]* 200) - 100;
 App.CameraPosition.Z = 5 + (Parameters[P_CAMERA_Z]) * 200;
@@ -553,6 +604,11 @@ switch (preBeats)
   case 1: PreRoll = 6; break;
   case 2: PreRoll = 8; break;
   case 3: PreRoll = 12; break;
+  case 4: PreRoll = 16; break;
+  case 5: PreRoll = 24; break;
+  case 6: PreRoll = 32; break;
+  case 7: PreRoll = 48; break;
+  case 8: PreRoll = 64; break;
 }
 
 // If Piano start/length change, update the key array
@@ -599,7 +655,7 @@ FindTempo();
 
 // Update note speed from slider....
 NoteSpeed = (Parameters[P_NOTE_SPEED] - 0.5)*NoteSpeedRange + NoteSpeedBase;
-NoteStep = app.DeltaTime * NoteSpeed;
+NoteStep = CurDelta * NoteSpeed;
 
 // For player mode, start the notes 4 beats out
 PlayerY =   PreRoll*NoteSpeed / (Tempo/60.0);
@@ -640,7 +696,7 @@ Show Particles @checkbox
 Light Keys @checkbox
 Note Direction @checkbox
 Transpose @checkbox
-Preroll @list1000: 4,6,8,12
+Preroll @list1000: 4,6,8,12,16,20,24,32,48,64
 Palette @list1000: Prime,Sunrise,Dusk, BlueSky, Rainbow,Fire,Grass,Pine,Icy, Bunnies, Bones
 Piano @list1000: Shooter, Player
 Note Speed
@@ -655,13 +711,14 @@ Num Keys
 First Key
 Tempo @list1000: Auto,60,70,80,90,100,110,120,130,140,150,160,170,180,190,200,210,220,230,240
 PianoLink @list1000: None,A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S,T,U,V,W,X,Y,Z
-]]>
+Show Velocity @checkbox
+Color by Chan @checkbox]]>
           </StringValue>
         </Constant>
         <Variable Name="isPlaying" Type="1"/>
-        <Array Name="Parameters" SizeDim1="21" Persistent="255">
+        <Array Name="Parameters" SizeDim1="23" Persistent="255">
           <Values>
-<![CDATA[789C636068B06780631840E637D8ABB231DA374E75B6BF79EEBB1D5BA3A8BDE5160F24B530F508000046F70C68]]>
+<![CDATA[789C636068B06780631840E637D8ABB231DA374E75B6BF79EEBB1D5BA3A8BDE5160F24B530F548E0802823007B020D3E]]>
           </Values>
         </Array>
         <Variable Name="SongPositionInBeats"/>
@@ -690,7 +747,9 @@ PianoLink @list1000: None,A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S,T,U,V,W,X,Y,Z
             <Constant Name="P_FIRST_KEY" Type="1" Value="18" IntValue="18"/>
             <Constant Name="P_TEMPO" Type="1" Value="19" IntValue="19"/>
             <Constant Name="P_PIANOLINK" Type="1" Value="20" IntValue="20"/>
-            <Constant Name="P_NUM_PARAMS" Type="1" Value="21" IntValue="21"/>
+            <Constant Name="P_USE_VELOCITY" Type="1" Value="21" IntValue="21"/>
+            <Constant Name="P_COLOR_CHANNEL" Type="1" Value="22" IntValue="22"/>
+            <Constant Name="P_NUM_PARAMS" Type="1" Value="23" IntValue="23"/>
           </Children>
         </Group> <!-- ParameterIndicies -->
 
@@ -711,6 +770,11 @@ PianoLink @list1000: None,A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S,T,U,V,W,X,Y,Z
 <![CDATA[789C6DCE218A02010005D00926D32493C96432992C3BBBC164324D32994C269345100441181004614010840141100604417676B307F0001EC00318B6E90BFBD30B9FCF0F82E23778E582CFF884737CC407BCC719DEE12DDEE014AFF10A2F718217788E67788A27788C47788807B88F7B38C65DDCC16D1CE1166EE206AEE31AAEE20A0E711997F0F3E7ED07BEE31BBEE202E738C3294EF0140F718C235CC7A19F0BFEE0044776BE837F537CD08FD8C1057EE0F0939F38C2311EE2294E708A339CE3025FF10DDFF1033F71E9EBED320E710557710DD7710337710B47B88D3BB88B63DCC37D3CC0433CC2633CC1533CC373BCC0095EE2155EE3146FF016EF7086F7F8808F38C7277CC69797FF00C00C7F5F]]>
           </Values>
         </Array>
+        <Array Name="NoteState" Type="1" Dimensions="1" SizeDim1="128" SizeDim2="16" Persistent="255">
+          <Values>
+<![CDATA[789CEDC1010D000000C2A0F74F6D0E37A00000000000000080770320000001]]>
+          </Values>
+        </Array>
         <Constant Name="Alignment"/>
         <Constant Name="KeyArcSpacing" Value="5"/>
         <Constant Name="KeySpacing" Value="1.5"/>
@@ -719,19 +783,17 @@ PianoLink @list1000: None,A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S,T,U,V,W,X,Y,Z
         <Constant Name="NoteSpeedBase" Value="100" IntValue="100"/>
         <Variable Name="BeatCounter" Type="1"/>
         <Variable Name="ClearAllNotes" Type="1"/>
+        <Variable Name="CurDelta"/>
+        <Variable Name="FinalNotes" Type="1"/>
         <Variable Name="FirstPianoKey" Type="1"/>
         <Variable Name="KeyAngle"/>
         <Variable Name="KeyStart"/>
         <Variable Name="LastBeat"/>
         <Variable Name="LastBeatTime"/>
+        <Variable Name="LastTime"/>
         <Variable Name="NoteAlpha"/>
         <Variable Name="NoteDirection"/>
         <Variable Name="NoteSpeed"/>
-        <Array Name="NoteState" Type="1" Dimensions="1" SizeDim1="128" SizeDim2="16" Persistent="255">
-          <Values>
-<![CDATA[789CEDC1010D000000C2A0F74F6D0E37A00000000000000080770320000001]]>
-          </Values>
-        </Array>
         <Variable Name="NoteStart"/>
         <Variable Name="NoteStep"/>
         <Variable Name="NumPianoKeys" Type="1"/>
@@ -740,10 +802,13 @@ PianoLink @list1000: None,A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S,T,U,V,W,X,Y,Z
         <Variable Name="PlayerY"/>
         <Variable Name="Preroll"/>
         <Variable Name="SongBar" Type="1"/>
+        <Variable Name="TotalNotes" Type="1"/>
+        <Variable Name="TotalNoteEnds" Type="1"/>
         <Variable Name="ViewportSize" Type="6"/>
         <Model Name="NoteModel" Position="0 0 -1" Scale="1.5 1 1">
           <Definitions>
             <Variable Name="noteIndex" Type="1"/>
+            <Variable Name="vel"/>
             <Variable Name="inNote" Comment="is the note hitting keyboard?"/>
             <Variable Name="noteChannel" Type="1"/>
             <Variable Name="noteIsActive"/>
@@ -761,6 +826,7 @@ PianoLink @list1000: None,A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S,T,U,V,W,X,Y,Z
 
 uniform float uPianoMode;
 uniform float uNoteDirection;
+uniform float uVel;
 
 varying vec4 fColor;
 
@@ -777,9 +843,12 @@ void main()
 
   fPos = gl_ProjectionMatrix * gl_ModelViewMatrix * gl_Vertex;
   float distance = sin(gl_Vertex.y) * (1.0 - shinyDir) +  (0.3 - sin(gl_Vertex.y))*(shinyDir);
+
+  distance *= uVel;
   brightness = vec4(distance,distance,distance,1);
 
-  fColor = brightness + gl_Color;
+  fColor = (brightness + gl_Color);
+  normalize(fColor);
 
   gl_Position = fPos;
 }]]>
@@ -797,6 +866,7 @@ void main()
               <UniformVariables>
                 <ShaderVariable Name="uPianoMode" VariableName="uPianoMode" VariableRef="PianoMode"/>
                 <ShaderVariable Name="uNoteDirection" VariableName="uNoteDirection" VariableRef="NoteDirection"/>
+                <ShaderVariable Name="uVel" VariableName="uVel" VariableRef="vel"/>
               </UniformVariables>
             </Shader>
             <Mesh Name="noteMesh">
@@ -820,10 +890,13 @@ CurrentModel.Position.y += NoteStep;
 // Update note's length if it's still being played
 if (CurrentModel.noteIsActive)
 {
-  CurrentModel.totalDelta += App.DeltaTime;
+  CurrentModel.totalDelta += CurDelta;
   CurrentModel.Scale.Y     = CurrentModel.totalDelta*NoteSpeed;
   CurrentModel.Position.y -= NoteStep/2;
 }
+
+// Base note width off initial velocity
+CurrentModel.Scale.X = KeySpacing * 0.5 + KeySpacing * 0.5 * vel;
 
 // Is the note currently crossing the keyboard?
 if ( ((NoteDirection == 0) && (CurrentModel.Position.y - CurrentModel.Scale.Y/2 <= 0)) ||
@@ -909,10 +982,11 @@ if (PianoMode == 1)
 
 
 // Set note color
+vec3 curColor = getColor(CurrentModel.noteChannel, CurrentModel.noteIndex);
 int colorSet = Parameters[P_COLOR_PALETTE] * 1000;
-NoteColor.Color.R = ChannelColors[colorSet,CurrentModel.noteChannel,0];
-NoteColor.Color.G = ChannelColors[colorSet,CurrentModel.noteChannel,1];
-NoteColor.Color.B = ChannelColors[colorSet,CurrentModel.noteChannel,2];
+NoteColor.Color.R = curColor[0];
+NoteColor.Color.G = curColor[1];
+NoteColor.Color.B = curColor[2];
 NoteColor.Color.A = NoteAlpha;
 NoteMaterial.Color = NoteColor.Color;
 
@@ -1047,21 +1121,22 @@ if (doRemove)
           <OnUpdate>
             <ZExpression>
               <Expression>
-<![CDATA[int colorSet = Parameters[P_COLOR_PALETTE] * 1000;
-
+<![CDATA[
 if (visible)
 {
-  ActiveMaterial.Color.R = channelColors[colorSet,currentModel.lastChannel,0];
-  ActiveMaterial.Color.G = channelColors[colorSet,currentModel.lastChannel,1];
-  ActiveMaterial.Color.B = channelColors[colorSet,currentModel.lastChannel,2];
+  vec3 curColor = getColor(currentModel.lastChannel, currentModel.noteValue);
+
+  ActiveMaterial.Color.R = curColor[0];
+  ActiveMaterial.Color.G = curColor[1];
+  ActiveMaterial.Color.B = curColor[2];
 
   if (isDown > 0)
   {
      sprayEmitter.ParticlesPerSecond = 10;
 
-    currentModel.particleColor[0] = channelColors[colorSet,currentModel.lastChannel,0];
-    currentModel.particleColor[1] = channelColors[colorSet,currentModel.lastChannel,1];
-    currentModel.particleColor[2] = channelColors[colorSet,currentModel.lastChannel,2];
+    currentModel.particleColor[0] = curColor[0];
+    currentModel.particleColor[1] = curColor[1];
+    currentModel.particleColor[2] = curColor[2];
     currentModel.particleColor[3] = 0.5;
 
     if (Parameters[P_LIGHT_KEYS] > 0.5)
@@ -1236,9 +1311,6 @@ PColor.b = currentModel.particleColor[2] - bright;]]>
             </Condition>
           </OnRender>
         </Model>
-        <Variable Name="TotalNotes" Type="1"/>
-        <Variable Name="FinalNotes" Type="1"/>
-        <Variable Name="TotalNoteEnds" Type="1"/>
       </Children>
     </Group> <!-- PianoData -->
 
