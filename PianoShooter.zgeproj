@@ -7,6 +7,8 @@
 void ParamsReadValueForLayer(xptr Handle, int Layer, int Param, ref float Value) {}
 void ParamsWriteValueForLayer(xptr Handle, int Layer, int Param, float NewValue) {}
 void ParamsChangeName(xptr Handle,int Layer, int Param, string NewName) {}
+// Don't see docs for this one, but it does appear to give you a name
+// for the specified layer (0-based -> 'A' = 0). Used by PianoLink feature.
 string ZgeVizGetEffectName(xptr Handle, int LayerNr) {}]]>
       </Source>
     </ZExternalLibrary>
@@ -493,6 +495,10 @@ GenKeyboard(FirstPianoKey,NumPianoKeys,PianoArc);]]>
       <Expression>
 <![CDATA[// This allows you to link all PianoShooters such that one controls
 // the critical parameters of the other to keep them in sync.
+//
+// Mostly meant for 2 pianos, where one is the piano and the other is the notes
+// with buffering and effects separated between them.  With more than two,
+// this system probably breaks down but might be useful for initial config.
 
 // Means you only have to automate the one you check
 if (Parameters[P_PIANOLINK] > 0.5)
@@ -520,11 +526,11 @@ if (Parameters[P_PIANOLINK] > 0.5)
             case P_SHOW_NOTES:
             case P_SHOW_PARTICLES:
             case P_LIGHT_KEYS:
-            case P_USE_VELOCITY:
-            case P_NOTE_TYPE:
               break;
 
             // These should be linked
+            case P_USE_VELOCITY:
+            case P_NOTE_TYPE:
             case P_COLOR_PALETTE:
             case P_COLOR_CHANNEL:
             case P_NOTE_DIR:
@@ -1053,6 +1059,7 @@ if (doRemove)
           <Definitions>
             <Constant Name="ColorReturnStep" Value="0.1"/>
             <Constant Name="KeyReturnStep" Value="0.3"/>
+            <Variable Name="currentColor" Type="7"/>
             <Variable Name="isDown" Type="1"/>
             <Variable Name="lastChannel" Type="1"/>
             <Variable Name="materialType" Comment="0=Active" Type="1"/>
@@ -1133,27 +1140,27 @@ if (doRemove)
               </Producers>
             </Mesh>
             <Material Name="ActiveMaterial"/>
-            <Material Name="BlackKeyMaterial" Color="0.1608 0.1608 0.1608 1" Shininess="0.14"/>
-            <Material Name="WhiteKeyMaterial"/>
+            <Material Name="BlackKeyMaterial" Color="0.1569 0.1569 0.1569 1" Light="0" SpecularColor="0 0 0 1" Shininess="0.14"/>
+            <Material Name="WhiteKeyMaterial" SpecularColor="0 0 0 1"/>
           </Definitions>
           <OnUpdate>
             <ZExpression>
               <Expression>
 <![CDATA[if (visible)
 {
-  vec3 curColor = getColor(currentModel.lastChannel, currentModel.noteValue);
-
-  ActiveMaterial.Color.R = curColor[0];
-  ActiveMaterial.Color.G = curColor[1];
-  ActiveMaterial.Color.B = curColor[2];
 
   if (isDown > 0)
   {
      sprayEmitter.ParticlesPerSecond = 10;
+    currentColor = getColor(currentModel.lastChannel, currentModel.noteValue);
 
-    currentModel.particleColor[0] = curColor[0];
-    currentModel.particleColor[1] = curColor[1];
-    currentModel.particleColor[2] = curColor[2];
+    ActiveMaterial.Color.R = currentColor[0];
+    ActiveMaterial.Color.G = currentColor[1];
+    ActiveMaterial.Color.B = currentColor[2];
+
+    currentModel.particleColor[0] = currentColor[0];
+    currentModel.particleColor[1] = currentColor[1];
+    currentModel.particleColor[2] = currentColor[2];
     currentModel.particleColor[3] = 0.5;
 
     if (Parameters[P_LIGHT_KEYS] > 0.5)
@@ -1217,6 +1224,18 @@ if (doRemove)
      sprayEmitter.ParticlesPerSecond = 0;
     // Key material
     materialType = isNoteBlack(NoteValue);
+    if (materialType == 1)
+    {
+      currentColor[0] = 0.1;
+      currentColor[1] = 0.1;
+      currentColor[2] = 0.1;
+    }
+    else
+    {
+      currentColor[0] = 0.9;
+      currentColor[1] = 0.9;
+      currentColor[2] = 0.9;
+    }
   }
 }]]>
               </Expression>
@@ -1306,6 +1325,7 @@ if (doRemove)
                 </Condition>
                 <Condition Name="If_Show_Particles" Expression="return (Parameters[P_SHOW_PARTICLES] &gt; 0.5);">
                   <OnTrue>
+                    <UseMaterial Material="ActiveMaterial"/>
                     <RenderParticles Name="sprayEmitter" ParticlesPerSecond="10" Spread="50" ParticleWidth="8" ParticleHeight="8" Speed="20" SpeedRange="10" Radius="5" ParticleLifetime="1" AnimateAlpha="-0.5" AnimateSize="-7" Damping="1">
                       <OnEmitExpression>
 <![CDATA[//Emit particle.
@@ -1317,6 +1337,7 @@ if (currentModel.isDown > 0)
 {
   bright = random(0.5,0.5);
 }
+
 PColor.r = currentModel.particleColor[0] - bright;
 PColor.g = currentModel.particleColor[1] - bright;
 PColor.b = currentModel.particleColor[2] - bright;]]>
