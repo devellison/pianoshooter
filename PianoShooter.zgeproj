@@ -6,7 +6,8 @@
 <![CDATA[// ZGameEditor Visualizer built-in functions
 void ParamsReadValueForLayer(xptr Handle, int Layer, int Param, ref float Value) {}
 void ParamsWriteValueForLayer(xptr Handle, int Layer, int Param, float NewValue) {}
-void ParamsChangeName(xptr Handle,int Layer, int Param, string NewName) {}]]>
+void ParamsChangeName(xptr Handle,int Layer, int Param, string NewName) {}
+string ZgeVizGetEffectName(xptr Handle, int LayerNr) {}]]>
       </Source>
     </ZExternalLibrary>
     <ZLibrary Name="PianoLib" Comment="Piano related functions">
@@ -490,60 +491,74 @@ GenKeyboard(FirstPianoKey,NumPianoKeys,PianoArc);]]>
   <OnUpdate>
     <ZExpression Name="PianoLink">
       <Expression>
-<![CDATA[// This allows you to link two PianoShooters such that one controls
+<![CDATA[// This allows you to link all PianoShooters such that one controls
 // the critical parameters of the other to keep them in sync.
 
-// Means you only have to automate one of them.
-int link = floor(Parameters[P_PIANOLINK]*1000);
-if (link > 0)
+// Means you only have to automate the one you check
+if (Parameters[P_PIANOLINK] > 0.5)
 {
-  int target = link - 1;
-  for (int i = 0; i < Parameters.SizeDim1; i++)
+  string test = "Looking for pianoshooters...";
+  for (int curLayer = 0; curLayer < 100; curLayer++)
   {
-    if ((ParamsInitialized == 0) || (Parameters[i] != ParamBuffer[i]))
+    // SKip if it's us :)
+    if (curLayer == LayerNr)
+      continue;
+
+    test = ZgeVizGetEffectName(FLPluginHandle,curLayer);
+    if (test == "PianoShooter")
     {
-      switch (i)
+
+      for (int i = 0; i < Parameters.SizeDim1; i++)
       {
-        // These should probably be inverted, but maybe ignored.
-        case P_SHOW_PIANO:
-        case P_SHOW_NOTES:
-        case P_SHOW_PARTICLES:
-        case P_LIGHT_KEYS:
-          //ParamsWriteValueForLayer(FLPluginHandle,target,i, 1.0 - Parameters[i]);
-          break;
+        if ((ParamsInitialized == 0) || (Parameters[i] != ParamBuffer[i]))
+        {
+          switch (i)
+          {
+            // These should make sense if different / random.
+            // With only two, might invert some of them?
+            case P_SHOW_PIANO:
+            case P_SHOW_NOTES:
+            case P_SHOW_PARTICLES:
+            case P_LIGHT_KEYS:
+            case P_USE_VELOCITY:
+            case P_NOTE_TYPE:
+              break;
 
-        // These should be linked
-        case P_PIANO_MODE:
-        case P_NOTE_DIR:
-        case P_TRANSPOSE:
-        case P_PREROLL:
-        case P_COLOR_PALETTE:
-        case P_NOTE_SPEED:
-        case P_KEYBOARD_ANGLE:
-        case P_CAMERA_X:
-        case P_CAMERA_Y:
-        case P_CAMERA_Z:
-        case P_CAMERA_YAW:
-        case P_CAMERA_PITCH:
-        case P_ARC:
-        case P_NUM_KEYS:
-        case P_FIRST_KEY:
-        case P_TEMPO:
-          ParamsWriteValueForLayer(FLPluginHandle,target,i, Parameters[i]);
-          break;
+            // These should be linked
+            case P_COLOR_PALETTE:
+            case P_COLOR_CHANNEL:
+            case P_NOTE_DIR:
+            case P_TRANSPOSE:
+            case P_PIANO_MODE:
+            case P_PREROLL:
+            case P_COLOR_PALETTE:
+            case P_TEMPO:
+            case P_TEMPO_FINE:
+            case P_NOTE_SPEED:
+            case P_KEYBOARD_ANGLE:
+            case P_CAMERA_X:
+            case P_CAMERA_Y:
+            case P_CAMERA_Z:
+            case P_CAMERA_YAW:
+            case P_CAMERA_PITCH:
+            case P_ARC:
+            case P_NUM_KEYS:
+            case P_FIRST_KEY:
+              ParamsWriteValueForLayer(FLPluginHandle,curLayer,i, Parameters[i]);
+              break;
 
-        // This one.... maybe just make sure only one is set?
-        case P_PIANOLINK:
-          ParamsWriteValueForLayer(FLPluginHandle,target,i, 1.0 - Parameters[i]);
-          break;
-      }
-
-      ParamBuffer[i] = Parameters[i];
-    }
-  }
-
+            // This one.... maybe just make sure only one is set?
+            case P_PIANOLINK:
+              ParamsWriteValueForLayer(FLPluginHandle,curLayer,i, 0);
+              break;
+          }
+          ParamBuffer[i] = Parameters[i];
+        } // End if parameters uninitialized or changed.
+      } // End for each parameter
+    } // End if it's a pianoshooter layer
+  } // End for each layer
   ParamsInitialized = 1;
-}]]>
+} // END IF PIANOLINK]]>
       </Expression>
     </ZExpression>
     <ZExpression Name="PianoShooterLogic">
@@ -697,7 +712,7 @@ Piano @list1000: Shooter, Player
 Preroll @list1000: 4,6,8,12,16,20,24,32,48,64
 Tempo @list1000: Auto,60,70,80,90,100,110,120,130,140,150,160,170,180,190,200,210,220,230,240
  Fine @list: 0,1,2,3,4,5,6,7,8,9
-PianoLink @list1000: None,A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S,T,U,V,W,X,Y,Z
+PianoLink @checkbox
 Note Speed
 Keyboard Angle
 Camera X
