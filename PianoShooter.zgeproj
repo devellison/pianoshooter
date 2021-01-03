@@ -112,7 +112,8 @@ void FindTempo()
     // List starts at 60 right now after auto, and goes up by 10 each time.
     Tempo = (tempoType - 1)* 10 + 60;
     // Fine adjust allows you to add 0-9 to the base
-    Tempo += floor(PARAMETERS[P_TEMPO_FINE]*1000);
+    int tempoFine = floor(PARAMETERS[P_TEMPO_FINE]*10);
+    Tempo += tempoFine;
   }
 }
 
@@ -690,11 +691,12 @@ Note Direction @checkbox
 Transpose @checkbox
 Show Velocity @checkbox
 Color by Chan @checkbox
+NoteType @list1000: Cuboid, Flat
 Palette @list1000: Prime,Sunrise,Dusk, BlueSky, Rainbow,Fire,Grass,Pine,Icy, Bunnies, Bones, Grayscale
 Piano @list1000: Shooter, Player
 Preroll @list1000: 4,6,8,12,16,20,24,32,48,64
 Tempo @list1000: Auto,60,70,80,90,100,110,120,130,140,150,160,170,180,190,200,210,220,230,240
-Tempo Fine @list: 0,1,2,3,4,5,6,7,8,9
+ Fine @list: 0,1,2,3,4,5,6,7,8,9
 PianoLink @list1000: None,A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S,T,U,V,W,X,Y,Z
 Note Speed
 Keyboard Angle
@@ -705,14 +707,13 @@ Camera Yaw
 Camera Pitch
 Key Arc
 Num Keys
-First Key
-]]>
+First Key]]>
           </StringValue>
         </Constant>
         <Variable Name="isPlaying" Type="1"/>
-        <Array Name="Parameters" SizeDim1="24" Persistent="255">
+        <Array Name="Parameters" SizeDim1="25" Persistent="255">
           <Values>
-<![CDATA[789C636068B06740C13080CACF1762B6664002F559367650A6FD716F737BFDBB2AF60C2800A217001F450A92]]>
+<![CDATA[789C636068B06740C13080CE6760C81762B646E6D767D9D84199F6C7BDCDEDF5EFAAA0A887E9070031310A92]]>
           </Values>
         </Array>
         <Variable Name="SongPositionInBeats"/>
@@ -727,23 +728,24 @@ First Key
             <Constant Name="P_TRANSPOSE" Type="1" Value="5" IntValue="5"/>
             <Constant Name="P_USE_VELOCITY" Type="1" Value="6" IntValue="6"/>
             <Constant Name="P_COLOR_CHANNEL" Type="1" Value="7" IntValue="7"/>
-            <Constant Name="P_COLOR_PALETTE" Type="1" Value="8" IntValue="8"/>
-            <Constant Name="P_PIANO_MODE" Type="1" Value="9" IntValue="9"/>
-            <Constant Name="P_PREROLL" Type="1" Value="10" IntValue="10"/>
-            <Constant Name="P_TEMPO" Type="1" Value="11" IntValue="11"/>
-            <Constant Name="P_TEMPO_FINE" Type="1" Value="12" IntValue="12"/>
-            <Constant Name="P_PIANOLINK" Type="1" Value="13" IntValue="13"/>
-            <Constant Name="P_NOTE_SPEED" Type="1" Value="14" IntValue="14"/>
-            <Constant Name="P_KEYBOARD_ANGLE" Type="1" Value="15" IntValue="15"/>
-            <Constant Name="P_CAMERA_X" Type="1" Value="16" IntValue="16"/>
-            <Constant Name="P_CAMERA_Y" Type="1" Value="17" IntValue="17"/>
-            <Constant Name="P_CAMERA_Z" Type="1" Value="18" IntValue="18"/>
-            <Constant Name="P_CAMERA_YAW" Type="1" Value="19" IntValue="19"/>
-            <Constant Name="P_CAMERA_PITCH" Type="1" Value="20" IntValue="20"/>
-            <Constant Name="P_ARC" Type="1" Value="21" IntValue="21"/>
-            <Constant Name="P_NUM_KEYS" Type="1" Value="22" IntValue="22"/>
-            <Constant Name="P_FIRST_KEY" Type="1" Value="23" IntValue="23"/>
-            <Constant Name="P_NUM_PARAMS" Type="1" Value="24" IntValue="24"/>
+            <Constant Name="P_NOTE_TYPE" Type="1" Value="8" IntValue="8"/>
+            <Constant Name="P_COLOR_PALETTE" Type="1" Value="9" IntValue="9"/>
+            <Constant Name="P_PIANO_MODE" Type="1" Value="10" IntValue="10"/>
+            <Constant Name="P_PREROLL" Type="1" Value="11" IntValue="11"/>
+            <Constant Name="P_TEMPO" Type="1" Value="12" IntValue="12"/>
+            <Constant Name="P_TEMPO_FINE" Type="1" Value="13" IntValue="13"/>
+            <Constant Name="P_PIANOLINK" Type="1" Value="14" IntValue="14"/>
+            <Constant Name="P_NOTE_SPEED" Type="1" Value="15" IntValue="15"/>
+            <Constant Name="P_KEYBOARD_ANGLE" Type="1" Value="16" IntValue="16"/>
+            <Constant Name="P_CAMERA_X" Type="1" Value="17" IntValue="17"/>
+            <Constant Name="P_CAMERA_Y" Type="1" Value="18" IntValue="18"/>
+            <Constant Name="P_CAMERA_Z" Type="1" Value="19" IntValue="19"/>
+            <Constant Name="P_CAMERA_YAW" Type="1" Value="20" IntValue="20"/>
+            <Constant Name="P_CAMERA_PITCH" Type="1" Value="21" IntValue="21"/>
+            <Constant Name="P_ARC" Type="1" Value="22" IntValue="22"/>
+            <Constant Name="P_NUM_KEYS" Type="1" Value="23" IntValue="23"/>
+            <Constant Name="P_FIRST_KEY" Type="1" Value="24" IntValue="24"/>
+            <Constant Name="P_NUM_PARAMS" Type="1" Value="25" IntValue="25"/>
           </Children>
         </Group> <!-- ParameterIndicies -->
 
@@ -1020,7 +1022,14 @@ if (doRemove)
               <OnTrue>
                 <RenderSetColor Name="NoteColor" Color="1 0 0.502 0.9"/>
                 <UseMaterial Material="noteMaterial"/>
-                <RenderMesh Mesh="noteMesh"/>
+                <Condition Name="meshNotes" Expression="return (Parameters[P_NOTE_TYPE] == 0.0);">
+                  <OnTrue>
+                    <RenderMesh Mesh="noteMesh"/>
+                  </OnTrue>
+                  <OnFalse>
+                    <RenderSprite/>
+                  </OnFalse>
+                </Condition>
               </OnTrue>
             </Condition>
           </OnRender>
