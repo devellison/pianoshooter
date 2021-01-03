@@ -111,6 +111,8 @@ void FindTempo()
   {
     // List starts at 60 right now after auto, and goes up by 10 each time.
     Tempo = (tempoType - 1)* 10 + 60;
+    // Fine adjust allows you to add 0-9 to the base
+    Tempo += floor(PARAMETERS[P_TEMPO_FINE]*1000);
   }
 }
 
@@ -274,56 +276,53 @@ void onNoteOff(int channel, int note, int velocity)
   }
 }
 
-/*
-// Setup Arc
-// Does it make more sense to say it's always a half-circle, or that
-// 128 keys is a half circle, and so smaller keyboards have a smaller angle?
-for (int i = 0; i < NumPianoKeys; ++i)
+// Update first/num keys and arg, returns > 0 if any changed.
+int updateKeys()
 {
-//  KeyArray[i].Rotation.Y = 0.5*Parameters[P_ARC]*(i - NumPianoKeys/2.0)/NumPianoKeys;
+  int changed = 0;
+  int newNum  = floor(Parameters[P_NUM_KEYS]*116 + 12);
+  int newFirst = floor(Parameters[P_FIRST_KEY]*116);
+  float newArc = Parameters[P_ARC];
 
+  if (newFirst + newNum >= 128)
+  {
+    newFirst = 128 - newNum;
+  }
+
+  if ((newNum != NumPianoKeys) ||
+      (newFirst != FirstPianoKey) ||
+      (newArc != PianoArc))
+  {
+    NumPianoKeys = newNum;
+    FirstPianoKey = newFirst;
+    PianoArc = newArc;
+    changed = 1;
+  }
+  return changed;
 }
-*/
 
-// Set up the keyboard for number of keys and first key.
-void GenKeyboard(int firstKey, int numKeys)
+// Set up the keyboard for number of keys and first key and current arc
+void GenKeyboard(int firstKey, int numKeys, float arc)
 {
-  NumPianoKeys = numKeys;
-  FirstPianoKey = firstKey;
-
-  // Clamp firstpianokey to something reasonable.
-  if (FirstPianoKey + NumPianoKeys >= 128)
-  {
-    FirstPianoKey = 128 - NumPianoKeys;
-  }
-
-
-  // Reset all keys
-  for (int i = 0; i < 128; i++)
-  {
-    KeyArray[i].isDown = 0;
-    KeyArray[i].visible = 0;
-
-    KeyPositions[i,0] = 0;
-    KeyPositions[i,1] = 0;
-    KeyPositions[i,2] = 0;
-
-    KeyArray[i].Position.X = 0;
-    KeyArray[i].Position.Y = 0;
-    KeyArray[i].Position.Z = 0;
-  }
 
 
   // Calc start of keyboard on X
   float arcKeySpacing = KeySpacing*.75;
-  KeyStart = -(arcKeySpacing*NumPianoKeys*.5);
+  KeyStart = -(arcKeySpacing*numKeys*.5);
+  int endPianoKey = firstKey + numKeys;
 
-  int lastPianoKey = FirstPianoKey + NumPianoKeys;
-
-  // Generate the piano keyboard
-  for (int i = FirstPianoKey; i < LastPianoKey; i++)
+  for (int i = 0; i < 128; i++)
   {
-    int key = i - FirstPianoKey;
+      KeyArray[i].visible = 0;
+      if (i >= endPianoKey)
+      {
+        KeyArray[i].isDown = 0;
+      }
+  }
+  // Generate the piano keyboard
+  for (int i = firstKey; i < endPianoKey; i++)
+  {
+    int key = i - firstKey;
 
     float flatPos = (i - 64.0) / 128.0;
     float arcPos  = PI - (PI * i/128.0);
@@ -341,9 +340,9 @@ void GenKeyboard(int firstKey, int numKeys)
 
     // So this averaging mostly works, but the key spacing isn't great inbetween states.
     // TODO: Fix it.
-    KeyPositions[key,0] = arcLayoutX*Parameters[P_ARC] + ((1.0 -Parameters[P_ARC])* flatLayoutX );
+    KeyPositions[key,0] = arcLayoutX*arc + ((1.0 - arc)* flatLayoutX );
     KeyPositions[key,1] = 0;
-    KeyPositions[key,2] = arcLayoutZ*Parameters[P_ARC] + ((1.0 - Parameters[P_ARC]) * flatLayoutZ );
+    KeyPositions[key,2] = arcLayoutZ*arc + ((1.0 - arc) * flatLayoutZ );
 
     KeyArray[key].visible = 1;
     KeyArray[key].NoteValue = i;
@@ -353,7 +352,7 @@ void GenKeyboard(int firstKey, int numKeys)
     KeyArray[key].Position.Y = KeyPositions[key,1];
     KeyArray[key].Position.Z = KeyPositions[key,2];
 
-    KeyArray[key].Rotation.Y = -.5*((i - 64.0)/128.0) * Parameters[P_ARC];
+    KeyArray[key].Rotation.Y = -.5*((i - 64.0)/128.0) * arc;
   }
 }
 
@@ -482,9 +481,8 @@ for (int i = 0; i < 128; i++)
   KeyArray[i].pressStep[2] = 0.3;
 }
 
-NumPianoKeys  = Parameters[P_NUM_KEYS]*128;
-FirstPianoKey = Parameters[P_FIRST_KEY]*127;
-GenKeyboard(FirstPianoKey,NumPianoKeys);]]>
+updateKeys();
+GenKeyboard(FirstPianoKey,NumPianoKeys,PianoArc);]]>
       </Expression>
     </ZExpression>
   </OnLoaded>
@@ -611,16 +609,10 @@ switch (preBeats)
   case 8: PreRoll = 64; break;
 }
 
-// If Piano start/length change, update the key array
-if ((NumPianoKeys  != floor(Parameters[P_NUM_KEYS]*116)+12) ||
-    (FirstPianoKey != floor(Parameters[P_FIRST_KEY]*116)) ||
-    (PianoArc != Parameters[P_ARC]))
+// If first/num keys or arc changed, regen the keyboard
+if (updateKeys() > 0)
 {
-  NumPianoKeys  = Parameters[P_NUM_KEYS]*116 + 12;
-  FirstPianoKey = Parameters[P_FIRST_KEY]*116;
-  PianoArc = Parameters[P_ARC];
-
-  GenKeyboard(FirstPianoKey,NumPianoKeys);
+  GenKeyboard(FirstPianoKey,NumPianoKeys, PianoArc);
 }
 
 // Update key angle from sliders
@@ -696,9 +688,14 @@ Show Particles @checkbox
 Light Keys @checkbox
 Note Direction @checkbox
 Transpose @checkbox
-Preroll @list1000: 4,6,8,12,16,20,24,32,48,64
-Palette @list1000: Prime,Sunrise,Dusk, BlueSky, Rainbow,Fire,Grass,Pine,Icy, Bunnies, Bones
+Show Velocity @checkbox
+Color by Chan @checkbox
+Palette @list1000: Prime,Sunrise,Dusk, BlueSky, Rainbow,Fire,Grass,Pine,Icy, Bunnies, Bones, Grayscale
 Piano @list1000: Shooter, Player
+Preroll @list1000: 4,6,8,12,16,20,24,32,48,64
+Tempo @list1000: Auto,60,70,80,90,100,110,120,130,140,150,160,170,180,190,200,210,220,230,240
+Tempo Fine @list: 0,1,2,3,4,5,6,7,8,9
+PianoLink @list1000: None,A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S,T,U,V,W,X,Y,Z
 Note Speed
 Keyboard Angle
 Camera X
@@ -709,20 +706,16 @@ Camera Pitch
 Key Arc
 Num Keys
 First Key
-Tempo @list1000: Auto,60,70,80,90,100,110,120,130,140,150,160,170,180,190,200,210,220,230,240
-PianoLink @list1000: None,A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S,T,U,V,W,X,Y,Z
-Show Velocity @checkbox
-Color by Chan @checkbox]]>
+]]>
           </StringValue>
         </Constant>
         <Variable Name="isPlaying" Type="1"/>
-        <Array Name="Parameters" SizeDim1="23" Persistent="255">
+        <Array Name="Parameters" SizeDim1="24" Persistent="255">
           <Values>
-<![CDATA[789C636068B06780631840E637D8ABB231DA374E75B6BF79EEBB1D5BA3A8BDE5160F24B530F548E0802823007B020D3E]]>
+<![CDATA[789C636068B06740C13080CACF1762B6664002F559367650A6FD716F737BFDBB2AF60C2800A217001F450A92]]>
           </Values>
         </Array>
         <Variable Name="SongPositionInBeats"/>
-        <Array Name="SpecBandArray"/>
         <Variable Name="Tempo"/>
         <Group Name="ParameterIndicies">
           <Children>
@@ -732,24 +725,25 @@ Color by Chan @checkbox]]>
             <Constant Name="P_LIGHT_KEYS" Type="1" Value="3" IntValue="3"/>
             <Constant Name="P_NOTE_DIR" Type="1" Value="4" IntValue="4"/>
             <Constant Name="P_TRANSPOSE" Type="1" Value="5" IntValue="5"/>
-            <Constant Name="P_PREROLL" Type="1" Value="6" IntValue="6"/>
-            <Constant Name="P_COLOR_PALETTE" Type="1" Value="7" IntValue="7"/>
-            <Constant Name="P_PIANO_MODE" Type="1" Value="8" IntValue="8"/>
-            <Constant Name="P_NOTE_SPEED" Type="1" Value="9" IntValue="9"/>
-            <Constant Name="P_KEYBOARD_ANGLE" Type="1" Value="10" IntValue="10"/>
-            <Constant Name="P_CAMERA_X" Type="1" Value="11" IntValue="11"/>
-            <Constant Name="P_CAMERA_Y" Type="1" Value="12" IntValue="12"/>
-            <Constant Name="P_CAMERA_Z" Type="1" Value="13" IntValue="13"/>
-            <Constant Name="P_CAMERA_YAW" Type="1" Value="14" IntValue="14"/>
-            <Constant Name="P_CAMERA_PITCH" Type="1" Value="15" IntValue="15"/>
-            <Constant Name="P_ARC" Type="1" Value="16" IntValue="16"/>
-            <Constant Name="P_NUM_KEYS" Type="1" Value="17" IntValue="17"/>
-            <Constant Name="P_FIRST_KEY" Type="1" Value="18" IntValue="18"/>
-            <Constant Name="P_TEMPO" Type="1" Value="19" IntValue="19"/>
-            <Constant Name="P_PIANOLINK" Type="1" Value="20" IntValue="20"/>
-            <Constant Name="P_USE_VELOCITY" Type="1" Value="21" IntValue="21"/>
-            <Constant Name="P_COLOR_CHANNEL" Type="1" Value="22" IntValue="22"/>
-            <Constant Name="P_NUM_PARAMS" Type="1" Value="23" IntValue="23"/>
+            <Constant Name="P_USE_VELOCITY" Type="1" Value="6" IntValue="6"/>
+            <Constant Name="P_COLOR_CHANNEL" Type="1" Value="7" IntValue="7"/>
+            <Constant Name="P_COLOR_PALETTE" Type="1" Value="8" IntValue="8"/>
+            <Constant Name="P_PIANO_MODE" Type="1" Value="9" IntValue="9"/>
+            <Constant Name="P_PREROLL" Type="1" Value="10" IntValue="10"/>
+            <Constant Name="P_TEMPO" Type="1" Value="11" IntValue="11"/>
+            <Constant Name="P_TEMPO_FINE" Type="1" Value="12" IntValue="12"/>
+            <Constant Name="P_PIANOLINK" Type="1" Value="13" IntValue="13"/>
+            <Constant Name="P_NOTE_SPEED" Type="1" Value="14" IntValue="14"/>
+            <Constant Name="P_KEYBOARD_ANGLE" Type="1" Value="15" IntValue="15"/>
+            <Constant Name="P_CAMERA_X" Type="1" Value="16" IntValue="16"/>
+            <Constant Name="P_CAMERA_Y" Type="1" Value="17" IntValue="17"/>
+            <Constant Name="P_CAMERA_Z" Type="1" Value="18" IntValue="18"/>
+            <Constant Name="P_CAMERA_YAW" Type="1" Value="19" IntValue="19"/>
+            <Constant Name="P_CAMERA_PITCH" Type="1" Value="20" IntValue="20"/>
+            <Constant Name="P_ARC" Type="1" Value="21" IntValue="21"/>
+            <Constant Name="P_NUM_KEYS" Type="1" Value="22" IntValue="22"/>
+            <Constant Name="P_FIRST_KEY" Type="1" Value="23" IntValue="23"/>
+            <Constant Name="P_NUM_PARAMS" Type="1" Value="24" IntValue="24"/>
           </Children>
         </Group> <!-- ParameterIndicies -->
 
@@ -759,9 +753,9 @@ Color by Chan @checkbox]]>
     <Group Name="PianoData" Comment="Data for the piano">
       <Children>
         <Array Name="ActiveNotes" Type="3" Dimensions="1" SizeDim1="128" SizeDim2="16"/>
-        <Array Name="ChannelColors" Dimensions="2" SizeDim1="11" SizeDim2="16" SizeDim3="3" Persistent="255">
+        <Array Name="ChannelColors" Dimensions="2" SizeDim1="12" SizeDim2="16" SizeDim3="3" Persistent="255">
           <Values>
-<![CDATA[789CD595F96F4D4114C76F42828458237EB09488D8820489887B8E204242882521116AF94124B6C416F1C32B452B2DD556EDEDAB5D8B166D55D13E6DD59296D74DDAAAEEA8DAAAB6AA5AE67B6EE7BEA7FA0F78C9E47DEFBD3367BE67E673660CC3C186FD73F05D978B3C7AB27C2B2F5BCA464BBF9FCDCDA4F5C7FA7AD368357EB7BFBF3DFEF4A941F2ADF1DB56FED1B45DF4C9137DD9337E83C43A18D28D3CE3DBB3D62F6A56D95A8FB99532D1D6890909F4B379873C9F3D33981B3E6EE4FA0FEBF94D5D1D7DFDB2994B8A177358682861EE8CF4291CEDF491FEB131C359CD6DE2FDA1F05E5C595131E9DBD72D8CDCA29D4EF3C3FB755C585040F05553BD92AF5FBB4639D9B3E869E142D53F9C76EDDC49F7B3A6F397CF9BE8F8B1639498308EF11DFD90F3E54B23E95E6626851CE82AB9E5E7E5D1F7C6467A5D5B6B3E2B2991E7ABF1F1E6F3D2528A8D892178C17BAC9DF268E6BADDE4E73048AFAADA075BFB391CB6565EBDFAB8283020C08456F9200E59FD0DD663941756F39235D607798BBE1A3F8603033A2AAF2126F6FC54F440D9C75CF75CBE993C41ED430D5556F8329E919FF2CBAF6B57737EDE3C6EED45CD61DE484A12ADF23073B2B3455FBC3094AAABAA44ABB1B21ED087232228606F078973333999C2427B882E2E2AA2C893FD44A3AF1ACFEA9DB93FB80B275C1F0B0F1415D99FD352896FA5A450DC9551FCE8E14CD943BC2B2C58C0CEA801EC7E32872BCA9709CBC8E14DDD1AAEAA5C2E398091D6FCEA75B3B4D3D68A75AFF73E36970F1FCC604F9F0DA21FE7CCB6E3FE686A220FAFE3C87BBEE7A54B3838A8B3C455FFFCEAE54BD27591993115EB6DEAD87BF7EC69D34B6BFF6AAF4D8F36BC6B99BCFAB499A377ED6B365AE2D83982A1B6D6010C79CD656B30E389E9FBCF5AE187F8E004DEC1A1A50DD49F68783F7AA48FEE03B645C33BB8B0FAB8081EA0E11DDCB6C4113FD08887FDB2C6FA8837688C2B2E5AA4E7129FD0F80ECEAD98BEE2191AFFDF1BB7B166DBBB0EC13E6A00DA8AE1160DF65103D0D659B05A34D8470D40837DD40034D8470D4023478C01FF601F350046C0396A00FC837DD400F807FBF806FEC13E6A0079817DE401FEC1BE670F2C8EB0FE383F353B18ABD9410CCD8E2B8D59B3131F379A353B984FB383B34FB3F3FBD72F7DCE737959196976D2525349B3131519499A1D75469366E7CEED49A4D9516B606A767066FECDFFFF9943467A3A05070549C37D003F689F1A1A082CE14EF1DFD58E7167DCCFCA229C13EFDEBE050B7438A237E31B9EE125F46077F11A73719870B12FB0939C959762477078584FF890F31C6CE1FE423B7F6E8878444B4A1C2F7726DABDCC698CBB0FAD207F3EBF7FB7565A75D50AC65D8986FBF60F7B9B4E1F]]>
+<![CDATA[789CD595FB4F545710C76F5293B689A66A8DF107DB6E4D63AC366AA2268DF1CE10DB3436A9D1D49A6862146D7F3026554CAA6D9AFEB02A2A34D022507CB4C2E25B50410544ACB0026235D0AE3C1AA008CB43457C21F58188D6F39DBBE7DE53E41F7093C97EEFBD67E6CC9CF399732CCBCF96FBF3F3B960903C1D25DF5A9A97B21519F7B4BF9FB4BED7DD6D5B03FC37C7C6BAFE7BF78C936FBD8FBEE5277DDF8BDEFDDB58F6FC6324D6B6A4E1E4F90F61ADAF767CE56AED73A668A6ABF3F3F2E869FF0FF2BC7FDF7BDC736F2D77DF5DC337BBBAE8E18375DCD8B09853929309739795CEE6CC804FC667674D6435B78DF7BFA48EE2D67078D6A387EB19B5650602F6DD3BABB9AEB696905747FB977CF2C409AAAAFC8CFEAE5BA8C6A7D2A68D1BE942C527FCE0FE37F4EBAE5D949F379DF11DE350F3D1231FD0F9F2724AFAF90DA9ADA6BA9A1EF7F6D28DCE4EFB9FC646793E9E9B6B5F696AA2ECAC2C422E788FB55339DA974321DAE0B748AFAADA07576FF0FB5DAD7235C604293E2ECE8656F5200E39E32DD63E2A1756F392E3EB43DDA28FE74EE5F8B8D754AE4936F67C4FE6BBB28F9743F3F974E1876A1F3AA8351CCD78467D2A5FBED1B9926BAA3FE781B9A839EC530505A2551D765565A5E8C38726507B5B9B68E52BEB01BD3D2D8DE2B6BE2A714E1716524AF248D10DF5F594BEFB2DD118ABFC59BDB37F4A1CC67927A72107CA487F9B4B8A89CF141551CEB1C97CE9E2A7B287785757FB050732DEE1D05FF338DCB24C58460D37BB56715BEB72A9018C0CE457AF9BA303AE56AC1BEF7D2E9717FF98C3DE9818D17F56CD75E33EE9EB238FD7E964CE77A5690927260C95B8EA9FAF5FBB46BA2FCACB3EC27ADB3AF6D62D5B06CD6560FE6AAF6D4F5B662F933166D01ACDDED76C44E2B83582A1C1D6010C1973B91ACC7831A35F582BFC101F9C207770E8680BFD271AB9EFDC31468F01DBA2913BB870C6040939402377701B8923F940231EF6CBF1F5496ED0F06BA85FA4E7923CA1F11D9C3B31A3256768FC3FEEFD8E35DB661F827DF400B41323241AECA307A09DB360A568B08F1E8006FBE80168B08F1E80468DF001FF601F3D0046C0397A00FC837DF400F807FBF806FEC13E7A0075817DD401FEC1BEB7070E47587F9C9F9A1DF86A761043B3132C61D6ECE4E64C61CD0EE6D3ECE0ECD3ECFCF7EC993EE7B9A5B999343B25C5C5A4D9C9484F27CD8E3AA349B373F6F759A4D9516B606B767066FE9FFF97B386B2D2524A4C4810C37D807C60FFF6F41058C29D12BBE915C69D71A1A282704EDCBE750B2CD0F6B4D18C6F78462EC9DB4648AE5987DF172E7E8C7F5DCECA23D9933835E54DE421E739D8C2FD053B7860BCE4082BC89F217726EC7CF9C78CBB0F565BB380EFDCFE5AACBD6D05E3AE84E1BE55B5D89EC97913B128C3FC86050C0B1A16364CCE9B880D37CC67D854C3A20C9B6F58B4613186F95D7B0E0B416B17]]>
           </Values>
         </Array>
         <Array Name="KeyArray" Type="3" SizeDim1="128"/>
@@ -1121,8 +1115,7 @@ if (doRemove)
           <OnUpdate>
             <ZExpression>
               <Expression>
-<![CDATA[
-if (visible)
+<![CDATA[if (visible)
 {
   vec3 curColor = getColor(currentModel.lastChannel, currentModel.noteValue);
 
@@ -1210,7 +1203,7 @@ if (visible)
               <OnTrue>
                 <Condition Name="If_Show_Piano" Expression="return (Parameters[P_SHOW_PIANO] &gt; 0.5);">
                   <OnTrue>
-                    <Condition Name="cond_is_it_active" Expression="return (materialType == 2);">
+                    <Condition Name="cond_is_it_active" Expression="return (CurrentModel.IsDown );">
                       <OnTrue>
                         <UseMaterial Material="ActiveMaterial"/>
                       </OnTrue>
