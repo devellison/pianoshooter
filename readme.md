@@ -1,4 +1,5 @@
 # PianoShooter v1.0
+![Screenshot of Pianoshooter 1](doc/sample1.png)
 
 PianoShooter is a visualizer written for the [ZGameEditor](https://github.com/VilleKrumlinde/zgameeditor " ZGameEditor") Visualizer 
 used in [FL Studio](http://image-line.com "FL Studio").
@@ -50,7 +51,6 @@ Key Set        | Allows selection of alternate models for the keys.
 
 
 ### Samples:
-- [Impostorem - An Introduction](https://youtu.be/c_HeOebqPMg) ( Shooter mode with flat notes and additional effects )
-- 
+- [Impostorem v1.1](https://youtu.be/Hy4qLU1YMmk) ( Player mode with cuboid notes and half-circle keyboard. PianoShooter only )
+- [Impostorem - An Introduction](https://youtu.be/c_HeOebqPMg) ( Shooter mode with flat notes, flat keyboard, and additional effects )
 - [Stress Test](https://www.youtube.com/watch?v=Pgzu_G7VlTU&ab_channel=Impostorem) ( lower your volume, image made with [Miditizer](https://github.com/devellison/miditize) )
-- 
