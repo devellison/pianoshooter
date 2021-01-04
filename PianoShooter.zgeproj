@@ -1220,17 +1220,16 @@ if (doRemove)
           <OnUpdate>
             <ZExpression>
               <Expression>
-<![CDATA[if (visible)
-{
+<![CDATA[currentColor = getColor(currentModel.lastChannel, currentModel.noteValue);
+ActiveMaterial.Color.R = currentColor[0];
+ActiveMaterial.Color.G = currentColor[1];
+ActiveMaterial.Color.B = currentColor[2];
 
+if (visible)
+{
   if (isDown > 0)
   {
-     sprayEmitter.ParticlesPerSecond = 10;
-    currentColor = getColor(currentModel.lastChannel, currentModel.noteValue);
-
-    ActiveMaterial.Color.R = currentColor[0];
-    ActiveMaterial.Color.G = currentColor[1];
-    ActiveMaterial.Color.B = currentColor[2];
+    sprayEmitter.ParticlesPerSecond = 10;
 
     currentModel.particleColor[0] = currentColor[0];
     currentModel.particleColor[1] = currentColor[1];
