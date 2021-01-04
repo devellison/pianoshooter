@@ -5,8 +5,13 @@ PianoShooter is a visualizer written for the [ZGameEditor](https://github.com/Vi
 used in [FL Studio](http://image-line.com "FL Studio").
 
 It displays a Piano-roll style keyboard and draws notes for MIDI events it receives.
+- [Overview](#Overview)
+- [Setup](#Setup)
+- [Controls](#Controls)
+- [Samples](#Samples)
 
-## Overview
+
+## <a name="Overview"/>Overview
 To use PianoShooter, simply take the `PianoShooter.zgeobject` file and place it in the `Effects/Midi` directory 
 for ZGameEditor Visualizer in FL Studio.
 
@@ -16,7 +21,38 @@ See more information in the  [FL Studio manual.](https://www.image-line.com/fl-s
 
 As of version 1.0, I think it's generally useable and will try to minimize disruption of parameters (so it keeps working right in existing projects if you update it).
 
-### Controls
+
+## <a name="Setup"/>Setup
+
+1. Add the ZGameEditor Visualizer to a mixer track (I generally put it on the Master track before any limiters)
+
+    ![Mixer with ZGEV](doc/mixer1.png)
+
+2. Make sure that ZGameEditor Visualizer is accepting MIDI on a MIDI Port. Remember which port you set it to.
+
+    ![ZGEV Settings](doc/zgev_midi.png)
+
+3. Add a "PianoShooter" Layer on the main tab of ZGameEditor Visualizer.
+4. Set a channel up to send MIDI to Port 0 (or whichever you picked in step #2).
+    - You could send patterns to a MIDI Out plugin, and set it to the appropriate port and channel you wish to send.    
+
+        ![MIDI Out plugin set to same port](doc/midiout.png)
+        
+        NOTE: Turn on "Map Note color to MIDI Channel" if you want to map multiple channels to PianoShooter from one MIDI Out.
+
+    - You could also use a Patcher in the Channel list to send the MIDI to both a MIDI Out plugin and your instrument.
+    
+        ![Patcher splitting MIDI to an instrument and a MIDI Out](doc/patcher.png)
+ 
+5. For Player mode (where the notes move TO the keyboard), you'll need to send MIDI to the Visualizer before it goes to the instrument. 
+    This can be done by duplicating tracks and offsetting them or by delaying the audio such that they sync.  
+    See also the Preroll setting in PianoShooter - MIDI should be sent the same
+    number of beats ahead of the audio as the Preroll is set to in Player mode.
+
+[See the FL Studio manual for general ZGameEditor Visualizer Settings and use.](https://www.image-line.com/fl-studio-learning/fl-studio-online-manual/html/plugins/ZGameEditor%20Visualizer.htm)
+
+
+### <a name="Controls"/>Controls
 ![Image of PianoShooter Settings](doc/settings.png)
 
 Control        | Description
@@ -50,7 +86,7 @@ Key Set        | Allows selection of alternate models for the keys.
 
 
 
-### Samples:
+### <a name="Samples"/>Samples:
 - [Impostorem v1.1](https://youtu.be/Hy4qLU1YMmk) ( Player mode with cuboid notes and half-circle keyboard. PianoShooter only )
 - [Impostorem - An Introduction](https://youtu.be/c_HeOebqPMg) ( Shooter mode with flat notes, flat keyboard, and additional effects )
 - [Stress Test](https://www.youtube.com/watch?v=Pgzu_G7VlTU&ab_channel=Impostorem) ( lower your volume, image made with [Miditizer](https://github.com/devellison/miditize) )
