@@ -1,4 +1,4 @@
-# PianoShooter v1.0
+# PianoShooter v1.1
 ![Screenshot of Pianoshooter 1](doc/sample1.png)
 
 PianoShooter is a visualizer written for the [ZGameEditor](https://github.com/VilleKrumlinde/zgameeditor " ZGameEditor") Visualizer 
