@@ -1,4 +1,4 @@
-# PianoShooter v1.1
+# PianoShooter v1.1.1
 ![Screenshot of Pianoshooter 1](doc/sample1.png)
 
 PianoShooter is a visualizer written for the [ZGameEditor](https://github.com/VilleKrumlinde/zgameeditor " ZGameEditor") Visualizer 
@@ -12,10 +12,20 @@ It displays a Piano-roll style keyboard and draws notes for MIDI events it recei
 
 
 ## <a name="Overview"/>Overview
-To use PianoShooter, simply take the `PianoShooter.zgeobject` file and place it in the `Effects/Midi` directory 
+
+### Install with Impostorem Tools
+As of version 1.1.1, PianoShooter is included in the [Impostorem Tools](https://github.com/devellison/impostorem_tools) installer.
+If you are using it Windows 10 64-bit with FLStudio 20, you can just use the [Impostorem Tools Installer](https://github.com/devellison/impostorem_tools/releases).
+
+### Manual Install
+If you're not using the Impostorem Tools Installer, you can install PianoShooter manually.
+
+To install PianoShooter, simply take the `PianoShooter.zgeobject` file and place it in the `Effects/Midi` directory 
 for ZGameEditor Visualizer in FL Studio.
 
-- On Windows, that will usually be `C:\Program Files (x86)\Image-Line\FL Studio\Plugins\Fruity\Effects\ZGameEditor Visualizer\Effects\MIDI`.
+- On Windows, that will usually be `C:\Program Files (x86)\Image-Line\FL Studio\Plugins\Fruity\Effects\ZGameEditor Visualizer\Effects\Midi`.
+- On Mac, it will usually be `/Applications/FL\ Studio\ 20.app/Contents/Resources/FL/Plugins/Fruity/Effects/ZGameEditor\ Visualizer/Effects/Midi`.
+
 
 See more information in the  [FL Studio manual.](https://www.image-line.com/fl-studio-learning/fl-studio-online-manual/html/plugins/ZGameEditor%20Visualizer.htm#ZGE_addfx "FL Studio manual.")
 
@@ -51,7 +61,6 @@ As of version 1.0, I think it's generally useable and will try to minimize disru
 
 [See the FL Studio manual for general ZGameEditor Visualizer Settings and use.](https://www.image-line.com/fl-studio-learning/fl-studio-online-manual/html/plugins/ZGameEditor%20Visualizer.htm)
 
-
 ### <a name="Controls"/>Controls
 ![Image of PianoShooter Settings](doc/settings.png)
 
@@ -84,9 +93,19 @@ Num Keys       | Adjusts the number of keys displayed.
 First Key      | If less than the full 128 keys are used, allows adjustment to the first key of the displayed keyboard
 Key Set        | Allows selection of alternate models for the keys.
 
+## Synchronizing and Tweaking MIDI for Pianoshooter
+
+Especially when PianoShooter is in PlayerMode, it can be tricky to align the MIDI with the audio and get the MIDI
+stream exactly the way you want it.  I've created a few tools for this in  [Impostorem Tools](https://github.com/devellison/impostorem_tools).
+- BeatDelay is a plugin that delays an audio stream by a set number of beats - you can set this to match the preroll in Pianoshooter for player mode.
+- MIDIMuck is a plugin that allows you to filter out MIDI notes and change the channel, octave, etc.
+  This is especially useful to filter out keyswitches and set up different instruments for different colors/channels.
+
+
 
 
 ### <a name="Samples"/>Samples:
+- [Euterpe 1](https://youtu.be/WEeOEKrbE9A) (Latest LyricText & Pianoshooter video using 1.1 with plugins from [Impostorem Tools](https://github.com/devellison/impostorem_tools) )
 - [Impostorem v1.1](https://youtu.be/Hy4qLU1YMmk) ( Player mode with cuboid notes and half-circle keyboard. PianoShooter only )
 - [Impostorem - An Introduction](https://youtu.be/c_HeOebqPMg) ( Shooter mode with flat notes, flat keyboard, and additional effects )
 - [Stress Test](https://www.youtube.com/watch?v=Pgzu_G7VlTU&ab_channel=Impostorem) ( lower your volume, image made with [Miditizer](https://github.com/devellison/miditize) )

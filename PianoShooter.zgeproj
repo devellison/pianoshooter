@@ -696,7 +696,7 @@ if (NoteDirection)
   <Content>
     <Group Name="FLStudio">
       <Children>
-        <Constant Name="AuthorInfo" Comment="v1.1" Type="2">
+        <Constant Name="AuthorInfo" Comment="v1.1.1" Type="2">
           <StringValue>
 <![CDATA[Impostorem
 http://www.impostorem.com]]>
